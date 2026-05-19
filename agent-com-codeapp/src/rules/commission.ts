@@ -26,7 +26,7 @@ function asAmount(value: number | undefined) {
   return Number.isFinite(value) ? Number(value) : 0;
 }
 
-export function calculateTotalPayment(record: CommissionSourceRecord) {
+export function totalPayment(record: CommissionSourceRecord) {
   const amountToPayOverride = asAmount(record.AmountToPayOverride);
 
   if (amountToPayOverride > 0) {
@@ -36,7 +36,7 @@ export function calculateTotalPayment(record: CommissionSourceRecord) {
   return asAmount(record.PaymentAmountSubject);
 }
 
-export function calculateNonFeeAmount(record: CommissionSourceRecord) {
+export function nonFee(record: CommissionSourceRecord) {
   const programName = record.ProgramName ?? "";
   const programStage = record.ProgramStage ?? "";
 
@@ -64,21 +64,21 @@ export function calculateNonFeeAmount(record: CommissionSourceRecord) {
   return 0;
 }
 
-export function calculateBaseAmount(record: CommissionSourceRecord) {
-  return Math.max(calculateTotalPayment(record) - calculateNonFeeAmount(record), 0);
+export function baseAmount(record: CommissionSourceRecord) {
+  return Math.max(totalPayment(record) - nonFee(record), 0);
 }
 
-export function calculateCommissionRate(record: CommissionSourceRecord) {
+export function commissionRate(record: CommissionSourceRecord) {
   return includesText(record.AgentCompanyName, "idp")
     ? IDP_COMMISSION_RATE
     : DEFAULT_COMMISSION_RATE;
 }
 
-export function calculateCommissionAmount(record: CommissionSourceRecord) {
-  return (calculateBaseAmount(record) * calculateCommissionRate(record)) / 100;
+export function commissionAmount(record: CommissionSourceRecord) {
+  return (baseAmount(record) * commissionRate(record)) / 100;
 }
 
-export function getProgramCodeMapping(record: CommissionSourceRecord): ProgramCodeMapping {
+export function programCode(record: CommissionSourceRecord): ProgramCodeMapping {
   const programName = record.ProgramName ?? "";
   const programStage = record.ProgramStage ?? "";
 
@@ -103,3 +103,10 @@ export function getProgramCodeMapping(record: CommissionSourceRecord): ProgramCo
     programStage,
   };
 }
+
+export const calculateTotalPayment = totalPayment;
+export const calculateNonFeeAmount = nonFee;
+export const calculateBaseAmount = baseAmount;
+export const calculateCommissionRate = commissionRate;
+export const calculateCommissionAmount = commissionAmount;
+export const getProgramCodeMapping = programCode;

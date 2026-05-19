@@ -1,5 +1,7 @@
 import { getAgentPayReady } from "./mockData";
 
+type DataMode = "mock" | "real";
+
 export type SeenFilter = "All" | "Seen" | "Not Seen";
 
 export type AgentPayReadyFilters = {
@@ -27,7 +29,9 @@ export type AgentPayReadyRecord = {
   Seen: boolean;
 };
 
-export function extractAgentPayReady(filters: AgentPayReadyFilters = {}) {
+const dataMode = (import.meta.env.VITE_DATA_MODE ?? "mock") as DataMode;
+
+function extractAgentPayReadyMock(filters: AgentPayReadyFilters = {}) {
   const records = getAgentPayReady() as AgentPayReadyRecord[];
   const yearFilter = filters.year ?? "All";
   const termFilter = filters.term ?? "All";
@@ -47,4 +51,20 @@ export function extractAgentPayReady(filters: AgentPayReadyFilters = {}) {
 
     return matchesYear && matchesTerm && matchesCampus && matchesProgram && matchesSeen;
   });
+}
+
+function extractAgentPayReadyReal(filters: AgentPayReadyFilters = {}) {
+  void filters;
+  // Future real-data hook:
+  // Call the approved SQL-backed API or Power Automate flow here, then normalize
+  // the response into AgentPayReadyRecord[] before returning it to the UI.
+  throw new Error("Real SQL extraction is not connected yet.");
+}
+
+export function extractAgentPayReady(filters: AgentPayReadyFilters = {}) {
+  if (dataMode === "real") {
+    return extractAgentPayReadyReal(filters);
+  }
+
+  return extractAgentPayReadyMock(filters);
 }

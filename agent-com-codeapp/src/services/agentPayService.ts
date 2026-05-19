@@ -80,7 +80,13 @@ async function extractAgentPayReadyReal(filters: AgentPayReadyFilters = {}) {
     throw new Error(`Agent pay extraction failed with status ${response.status}.`);
   }
 
-  return (await response.json()) as AgentPayReadyRecord[];
+  const rows = await response.json();
+
+  if (!Array.isArray(rows)) {
+    throw new Error("Agent pay extraction returned an invalid response.");
+  }
+
+  return rows as AgentPayReadyRecord[];
 }
 
 export function extractAgentPayReady(filters: AgentPayReadyFilters = {}) {

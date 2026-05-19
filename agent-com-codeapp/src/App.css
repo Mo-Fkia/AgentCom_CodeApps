@@ -505,6 +505,14 @@ select {
   text-align: center;
 }
 
+.error-message {
+  border: 1px solid #b3261e;
+  background: #fff7f6;
+  color: #8c1d18;
+  padding: 0.75rem;
+  font-size: 0.9rem;
+}
+
 .table-action {
   min-height: 2rem;
   padding: 0 0.7rem;

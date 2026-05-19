@@ -204,8 +204,10 @@ function HomeScreen({ setActiveScreen }: { setActiveScreen: (screen: string) => 
   );
 }
 
-function uniqueOptions<T>(rows: T[], getValue: (row: T) => string | number) {
-  return Array.from(new Set(rows.map((row) => String(getValue(row))).filter(Boolean))).sort();
+function uniqueOptions<T>(rows: T[] | unknown, getValue: (row: T) => string | number) {
+  const safeRows = Array.isArray(rows) ? (rows as T[]) : [];
+
+  return Array.from(new Set(safeRows.map((row) => String(getValue(row))).filter(Boolean))).sort();
 }
 
 function formatCurrency(amount: number) {
@@ -243,26 +245,55 @@ function GenerateDraftsScreen({
   hasExtracted: boolean;
   onExtractData: (records: AgentPayReadyRecord[]) => void;
 }) {
-  const agentPayReady = extractAgentPayReady() as AgentPayReadyRecord[];
   const [yearFilter, setYearFilter] = useState("All");
   const [termFilter, setTermFilter] = useState("All");
   const [campusFilter, setCampusFilter] = useState("All");
   const [programFilter, setProgramFilter] = useState("All");
   const [seenFilter, setSeenFilter] = useState<SeenFilter>("All");
+  const [extractError, setExtractError] = useState("");
+  const [isExtracting, setIsExtracting] = useState(false);
 
-  const yearOptions = uniqueOptions(agentPayReady, (record) => record.TermYear);
-  const termOptions = uniqueOptions(agentPayReady, (record) => record.TermNumber);
-  const campusOptions = uniqueOptions(agentPayReady, (record) => record.CampusName);
-  const programOptions = uniqueOptions(agentPayReady, (record) => record.ProgramName);
+  const yearOptions = uniqueOptions<AgentPayReadyRecord>(
+    extractedRecords,
+    (record) => record.TermYear,
+  );
+  const termOptions = uniqueOptions<AgentPayReadyRecord>(
+    extractedRecords,
+    (record) => record.TermNumber,
+  );
+  const campusOptions = uniqueOptions<AgentPayReadyRecord>(
+    extractedRecords,
+    (record) => record.CampusName,
+  );
+  const programOptions = uniqueOptions<AgentPayReadyRecord>(
+    extractedRecords,
+    (record) => record.ProgramName,
+  );
 
-  const getFilteredRecords = () =>
-    extractAgentPayReady({
-      campus: campusFilter,
-      program: programFilter,
-      seen: seenFilter,
-      term: termFilter,
-      year: yearFilter,
-    }) as AgentPayReadyRecord[];
+  const handleExtractData = async () => {
+    setExtractError("");
+    setIsExtracting(true);
+
+    try {
+      const rows = await extractAgentPayReady({
+        campus: campusFilter,
+        program: programFilter,
+        seen: seenFilter,
+        term: termFilter,
+        year: yearFilter,
+      });
+
+      if (!Array.isArray(rows)) {
+        throw new Error("Agent pay extraction returned an invalid response.");
+      }
+
+      onExtractData(rows);
+    } catch (error) {
+      setExtractError(error instanceof Error ? error.message : "Agent pay extraction failed.");
+    } finally {
+      setIsExtracting(false);
+    }
+  };
 
   const distinctAgentCount = new Set(
     extractedRecords.map((record) => record.AgentCompanyID || record.AgentCompanyName),
@@ -334,9 +365,14 @@ function GenerateDraftsScreen({
               <option>Not Seen</option>
             </select>
           </label>
-          <button className="secondary-button side-panel-button" onClick={() => onExtractData(getFilteredRecords())}>
-            Extract Data
+          <button
+            className="secondary-button side-panel-button"
+            disabled={isExtracting}
+            onClick={handleExtractData}
+          >
+            {isExtracting ? "Extracting..." : "Extract Data"}
           </button>
+          {extractError ? <div className="error-message">{extractError}</div> : null}
         </aside>
         <div className="empty-state">
           {hasExtracted

@@ -2,7 +2,12 @@ import { useState } from "react";
 import "./App.css";
 import logoUrl from "./assets/brand/lcb-australia-logo.png";
 import studentUrl from "./assets/brand/lcb-australia-student.png";
-import { getAgentPayReady, getAgentTagging, getVendors } from "./services/mockData";
+import {
+  getAgentPayReady,
+  getAgentTagging,
+  getInvoiceTracker,
+  getVendors,
+} from "./services/mockData";
 import {
   baseAmount,
   commissionAmount,
@@ -30,12 +35,6 @@ const stats = [
 ];
 
 const campuses = ["Adelaide", "Brisbane", "Melbourne", "Sydney"];
-
-const trackerRows = [
-  ["INV-2399", "Submitted", "10 May 2026", "$9,820"],
-  ["INV-2401", "Paid", "12 May 2026", "$14,300"],
-  ["INV-2407", "Ready for BC", "18 May 2026", "$18,450"],
-];
 
 type DataTableProps = {
   columns: string[];
@@ -82,11 +81,23 @@ type VendorRecord = {
   "Vendor Name": string;
 };
 
+type MockInvoiceTrackerRecord = {
+  InvoiceNumber: string;
+  AgentCompanyName: string;
+  VendorCode: string;
+  CampusName: string;
+  Amount: number;
+  Status: string;
+  LastUpdated: string;
+};
+
 type AgentMappingRow = {
   agentCompanyId: string;
   originalAgentName: string;
   selectedNavId: string;
 };
+
+type DraftStatus = "New" | "Sent" | "Uploaded" | "Completed";
 
 type DraftInvoiceRecord = {
   DraftNm: string;
@@ -95,7 +106,7 @@ type DraftInvoiceRecord = {
   YearTerm: string;
   Campus: string;
   TotalCommission: number;
-  CurrentStatus: "New";
+  CurrentStatus: DraftStatus;
   CreatedDate: string;
   DraftInvoiceLink: "#";
 };
@@ -213,7 +224,44 @@ function formatCurrency(amount: number) {
   }).format(amount);
 }
 
-function GenerateDraftsScreen() {
+function getYearTerm(record: AgentPayReadyRecord) {
+  return record.YT || `${record.TermYear}${record.TermNumber}`;
+}
+
+function isMappedAgent(mapping: AgentMappingRow) {
+  return Boolean(mapping.selectedNavId);
+}
+
+function nextDraftStatus(status: DraftStatus) {
+  const statuses: DraftStatus[] = ["New", "Sent", "Uploaded", "Completed"];
+  const currentIndex = statuses.indexOf(status);
+
+  return statuses[Math.min(currentIndex + 1, statuses.length - 1)];
+}
+
+function createInitialTrackerRecords() {
+  return (getInvoiceTracker() as MockInvoiceTrackerRecord[]).map((record) => ({
+    AgentCode: record.VendorCode || "-",
+    AgentName: record.AgentCompanyName,
+    Campus: record.CampusName,
+    CreatedDate: record.LastUpdated,
+    CurrentStatus: "New" as DraftStatus,
+    DraftInvoiceLink: "#" as const,
+    DraftNm: record.InvoiceNumber,
+    TotalCommission: record.Amount,
+    YearTerm: "Mock",
+  }));
+}
+
+function GenerateDraftsScreen({
+  extractedRecords,
+  hasExtracted,
+  onExtractData,
+}: {
+  extractedRecords: AgentPayReadyRecord[];
+  hasExtracted: boolean;
+  onExtractData: (records: AgentPayReadyRecord[]) => void;
+}) {
   const agentPayReady = getAgentPayReady() as AgentPayReadyRecord[];
   const [yearFilter, setYearFilter] = useState("All");
   const [termFilter, setTermFilter] = useState("All");
@@ -226,7 +274,7 @@ function GenerateDraftsScreen() {
   const campusOptions = uniqueOptions(agentPayReady, (record) => record.CampusName);
   const programOptions = uniqueOptions(agentPayReady, (record) => record.ProgramName);
 
-  const filteredRecords = agentPayReady.filter((record) => {
+  const getFilteredRecords = () => agentPayReady.filter((record) => {
     const matchesYear = yearFilter === "All" || String(record.TermYear) === yearFilter;
     const matchesTerm = termFilter === "All" || String(record.TermNumber) === termFilter;
     const matchesCampus = campusFilter === "All" || record.CampusName === campusFilter;
@@ -240,10 +288,10 @@ function GenerateDraftsScreen() {
   });
 
   const distinctAgentCount = new Set(
-    filteredRecords.map((record) => record.AgentCompanyID || record.AgentCompanyName),
+    extractedRecords.map((record) => record.AgentCompanyID || record.AgentCompanyName),
   ).size;
 
-  const previewRows = filteredRecords.slice(0, 25).map((record) => [
+  const previewRows = extractedRecords.slice(0, 25).map((record) => [
     String(record.AgentCompanyID),
     record.AgentCompanyName,
     `${record.TermYear} T${record.TermNumber}`,
@@ -255,12 +303,8 @@ function GenerateDraftsScreen() {
 
   return (
     <div className="screen-stack">
-      <SectionHeader title="Generate Drafts" eyebrow="Draft generation" action="Generate drafts" />
+      <SectionHeader title="Generate Drafts" eyebrow="Draft generation" />
       <div className="split-grid">
-        <DataTable
-          columns={["Agent ID", "Agent", "Term", "Campus", "Program", "Amount", "Seen"]}
-          rows={previewRows}
-        />
         <aside className="side-panel">
           <h3>Filters</h3>
           <label>
@@ -313,68 +357,56 @@ function GenerateDraftsScreen() {
               <option>Not Seen</option>
             </select>
           </label>
+          <button className="secondary-button side-panel-button" onClick={() => onExtractData(getFilteredRecords())}>
+            Extract Data
+          </button>
         </aside>
-      </div>
-      <div className="draft-summary-grid">
-        <div className="stat-card">
-          <p>Total filtered records</p>
-          <strong>{filteredRecords.length}</strong>
-        </div>
-        <div className="stat-card">
-          <p>Distinct agent count</p>
-          <strong>{distinctAgentCount}</strong>
+        <div className="empty-state">
+          {hasExtracted
+            ? "Extracted data is ready for review."
+            : "Select filters and extract data to begin draft generation."}
         </div>
       </div>
+      {hasExtracted ? (
+        <>
+          <div className="draft-summary-grid">
+            <div className="stat-card">
+              <p>Total filtered records</p>
+              <strong>{extractedRecords.length}</strong>
+            </div>
+            <div className="stat-card">
+              <p>Distinct agent count</p>
+              <strong>{distinctAgentCount}</strong>
+            </div>
+          </div>
+          <DataTable
+            columns={["Agent ID", "Agent", "Term", "Campus", "Program", "Amount", "Seen"]}
+            rows={previewRows}
+          />
+        </>
+      ) : null}
     </div>
   );
 }
 
-function AgentMappingScreen() {
-  const agentPayReady = getAgentPayReady() as AgentPayReadyRecord[];
-  const agentTagging = getAgentTagging() as AgentTaggingRecord[];
+function AgentMappingScreen({
+  agentMappings,
+  onContinue,
+  onUpdateVendor,
+}: {
+  agentMappings: AgentMappingRow[];
+  onContinue: () => void;
+  onUpdateVendor: (agentCompanyId: string, selectedNavId: string) => void;
+}) {
   const vendors = getVendors() as VendorRecord[];
-
-  const taggingByAgentId = new Map(
-    agentTagging.map((record) => [record.Title, record]),
-  );
   const vendorsByNavId = new Map(
     vendors
       .filter((vendor) => vendor["NAV ID"] && vendor["Vendor Name"])
       .map((vendor) => [vendor["NAV ID"], vendor]),
   );
-
-  const agentRows = Array.from(
-    new Map(
-      agentPayReady.map((record) => {
-        const agentCompanyId = String(record.AgentCompanyID);
-        const tagging = taggingByAgentId.get(agentCompanyId);
-
-        return [
-          agentCompanyId,
-          {
-            agentCompanyId,
-            originalAgentName: record.AgentCompanyName,
-            selectedNavId: tagging?.["BC Vendor Code"] ?? "",
-          },
-        ];
-      }),
-    ).values(),
-  );
-
-  const [agentMappings, setAgentMappings] = useState<AgentMappingRow[]>(agentRows);
-
   const vendorOptions = vendors
     .filter((vendor) => vendor["NAV ID"] && vendor["Vendor Name"])
     .sort((a, b) => a["Vendor Name"].localeCompare(b["Vendor Name"]));
-
-  const updateVendor = (agentCompanyId: string, selectedNavId: string) => {
-    setAgentMappings((currentMappings) =>
-      currentMappings.map((mapping) =>
-        mapping.agentCompanyId === agentCompanyId ? { ...mapping, selectedNavId } : mapping,
-      ),
-    );
-  };
-
   const allAgentsMapped = agentMappings.every((mapping) => {
     const vendor = vendorsByNavId.get(mapping.selectedNavId);
     return Boolean(vendor?.["Vendor Name"] && vendor["NAV ID"]);
@@ -390,14 +422,9 @@ function AgentMappingScreen() {
         </div>
         <div>
           <p>Mapped agents</p>
-          <strong>
-            {
-              agentMappings.filter((mapping) => vendorsByNavId.has(mapping.selectedNavId))
-                .length
-            }
-          </strong>
+          <strong>{agentMappings.filter(isMappedAgent).length}</strong>
         </div>
-        <button className="secondary-button" disabled={!allAgentsMapped}>
+        <button className="secondary-button" disabled={!allAgentsMapped} onClick={onContinue}>
           Continue
         </button>
       </div>
@@ -426,7 +453,7 @@ function AgentMappingScreen() {
                       aria-label={`Vendor for ${mapping.originalAgentName}`}
                       value={mapping.selectedNavId}
                       onChange={(event) =>
-                        updateVendor(mapping.agentCompanyId, event.target.value)
+                        onUpdateVendor(mapping.agentCompanyId, event.target.value)
                       }
                     >
                       <option value="">Select vendor</option>
@@ -452,19 +479,19 @@ function AgentMappingScreen() {
 }
 
 function InvoiceReviewScreen({
+  extractedRecords,
   onGenerateDrafts,
 }: {
+  extractedRecords: AgentPayReadyRecord[];
   onGenerateDrafts: (records: AgentPayReadyRecord[]) => void;
 }) {
-  const agentPayReady = getAgentPayReady() as AgentPayReadyRecord[];
-
-  const invoiceReviewRows = agentPayReady.map((record) => [
+  const invoiceReviewRows = extractedRecords.map((record) => [
     record.AgentCompanyName,
     record.StudentName.trim() || "-",
     String(record.EmpID),
     record.ProgramName,
     record.CampusName,
-    record.YT || `${record.TermYear}${record.TermNumber}`,
+    getYearTerm(record),
     formatCurrency(totalPayment(record)),
     formatCurrency(nonFee(record)),
     formatCurrency(baseAmount(record)),
@@ -479,7 +506,7 @@ function InvoiceReviewScreen({
         title="Invoice Review"
         eyebrow="Approval queue"
         action="Generate Drafts"
-        onAction={() => onGenerateDrafts(agentPayReady)}
+        onAction={() => onGenerateDrafts(extractedRecords)}
       />
       <DataTable
         columns={[
@@ -503,46 +530,62 @@ function InvoiceReviewScreen({
 }
 
 function InvoiceTrackerScreen({
-  draftInvoices,
+  trackerRecords,
   successMessage,
+  onAdvanceStatus,
 }: {
-  draftInvoices: DraftInvoiceRecord[];
+  trackerRecords: DraftInvoiceRecord[];
   successMessage: string;
+  onAdvanceStatus: (draftName: string) => void;
 }) {
-  const generatedRows = draftInvoices.map((draft) => [
-    draft.DraftNm,
-    draft.AgentName,
-    draft.AgentCode,
-    draft.YearTerm,
-    draft.Campus,
-    formatCurrency(draft.TotalCommission),
-    draft.CreatedDate,
-    draft.DraftInvoiceLink,
-    draft.CurrentStatus,
-  ]);
-
   return (
     <div className="screen-stack">
       <SectionHeader title="Invoice Tracker" eyebrow="Progress" action="Export list" />
       {successMessage ? <div className="success-message">{successMessage}</div> : null}
-      <DataTable
-        columns={
-          generatedRows.length > 0
-            ? [
-                "Draft",
-                "Agent Name",
-                "Agent Code",
-                "YearTerm",
-                "Campus",
-                "Total Commission",
-                "Created Date",
-                "Draft Link",
-                "Status",
-              ]
-            : ["Invoice", "Status", "Last updated", "Amount"]
-        }
-        rows={generatedRows.length > 0 ? generatedRows : trackerRows}
-      />
+      <div className="table-shell">
+        <table>
+          <thead>
+            <tr>
+              <th>Draft</th>
+              <th>Agent Name</th>
+              <th>Agent Code</th>
+              <th>YearTerm</th>
+              <th>Campus</th>
+              <th>Total Commission</th>
+              <th>Created Date</th>
+              <th>Draft Link</th>
+              <th>Status</th>
+              <th>Next</th>
+            </tr>
+          </thead>
+          <tbody>
+            {trackerRecords.map((draft) => (
+              <tr key={draft.DraftNm}>
+                <td>{draft.DraftNm}</td>
+                <td>{draft.AgentName}</td>
+                <td>{draft.AgentCode}</td>
+                <td>{draft.YearTerm}</td>
+                <td>{draft.Campus}</td>
+                <td>{formatCurrency(draft.TotalCommission)}</td>
+                <td>{draft.CreatedDate}</td>
+                <td>{draft.DraftInvoiceLink}</td>
+                <td>
+                  <StatusBadge>{draft.CurrentStatus}</StatusBadge>
+                </td>
+                <td>
+                  <button
+                    className="secondary-button table-action"
+                    disabled={draft.CurrentStatus === "Completed"}
+                    onClick={() => onAdvanceStatus(draft.DraftNm)}
+                  >
+                    Advance
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
@@ -602,26 +645,75 @@ function SendToBcScreen() {
 }
 
 function ActiveScreen({
+  agentMappings,
   activeScreen,
-  setActiveScreen,
-  draftInvoices,
+  extractedRecords,
+  hasExtracted,
+  isMappingComplete,
+  onAdvanceStatus,
+  onContinueMapping,
+  onExtractData,
   onGenerateDrafts,
+  onUpdateVendor,
+  setActiveScreen,
   successMessage,
+  trackerRecords,
 }: {
+  agentMappings: AgentMappingRow[];
   activeScreen: string;
-  setActiveScreen: (screen: string) => void;
-  draftInvoices: DraftInvoiceRecord[];
+  extractedRecords: AgentPayReadyRecord[];
+  hasExtracted: boolean;
+  isMappingComplete: boolean;
+  onAdvanceStatus: (draftName: string) => void;
+  onContinueMapping: () => void;
+  onExtractData: (records: AgentPayReadyRecord[]) => void;
   onGenerateDrafts: (records: AgentPayReadyRecord[]) => void;
+  onUpdateVendor: (agentCompanyId: string, selectedNavId: string) => void;
+  setActiveScreen: (screen: string) => void;
   successMessage: string;
+  trackerRecords: DraftInvoiceRecord[];
 }) {
   if (activeScreen === "Home") return <HomeScreen setActiveScreen={setActiveScreen} />;
-  if (activeScreen === "Generate Drafts") return <GenerateDraftsScreen />;
-  if (activeScreen === "Agent Mapping") return <AgentMappingScreen />;
+  if (activeScreen === "Generate Drafts") {
+    return (
+      <GenerateDraftsScreen
+        extractedRecords={extractedRecords}
+        hasExtracted={hasExtracted}
+        onExtractData={onExtractData}
+      />
+    );
+  }
+  if (activeScreen === "Agent Mapping") {
+    if (!hasExtracted) return <div className="empty-state">Extract data before mapping agents.</div>;
+
+    return (
+      <AgentMappingScreen
+        agentMappings={agentMappings}
+        onContinue={onContinueMapping}
+        onUpdateVendor={onUpdateVendor}
+      />
+    );
+  }
   if (activeScreen === "Invoice Review") {
-    return <InvoiceReviewScreen onGenerateDrafts={onGenerateDrafts} />;
+    if (!isMappingComplete) {
+      return <div className="empty-state">Complete agent mapping before invoice review.</div>;
+    }
+
+    return (
+      <InvoiceReviewScreen
+        extractedRecords={extractedRecords}
+        onGenerateDrafts={onGenerateDrafts}
+      />
+    );
   }
   if (activeScreen === "Invoice Tracker") {
-    return <InvoiceTrackerScreen draftInvoices={draftInvoices} successMessage={successMessage} />;
+    return (
+      <InvoiceTrackerScreen
+        onAdvanceStatus={onAdvanceStatus}
+        successMessage={successMessage}
+        trackerRecords={trackerRecords}
+      />
+    );
   }
   if (activeScreen === "Upload Invoice") return <UploadInvoiceScreen />;
   return <SendToBcScreen />;
@@ -629,15 +721,78 @@ function ActiveScreen({
 
 function App() {
   const [activeScreen, setActiveScreen] = useState("Home");
-  const [draftInvoices, setDraftInvoices] = useState<DraftInvoiceRecord[]>([]);
+  const [extractedRecords, setExtractedRecords] = useState<AgentPayReadyRecord[]>([]);
+  const [agentMappings, setAgentMappings] = useState<AgentMappingRow[]>([]);
+  const [trackerRecords, setTrackerRecords] = useState<DraftInvoiceRecord[]>(createInitialTrackerRecords);
   const [successMessage, setSuccessMessage] = useState("");
+  const hasExtracted = extractedRecords.length > 0;
+  const isMappingComplete =
+    hasExtracted && agentMappings.length > 0 && agentMappings.every(isMappedAgent);
+
+  const buildAgentMappings = (records: AgentPayReadyRecord[]) => {
+    const agentTagging = getAgentTagging() as AgentTaggingRecord[];
+    const vendors = getVendors() as VendorRecord[];
+    const taggingByAgentId = new Map(agentTagging.map((record) => [record.Title, record]));
+    const validVendorCodes = new Set(
+      vendors
+        .filter((vendor) => vendor["NAV ID"] && vendor["Vendor Name"])
+        .map((vendor) => vendor["NAV ID"]),
+    );
+
+    return Array.from(
+      new Map(
+        records.map((record) => {
+          const agentCompanyId = String(record.AgentCompanyID);
+          const tagging = taggingByAgentId.get(agentCompanyId);
+          const mappedNavId = tagging?.["BC Vendor Code"] ?? "";
+
+          return [
+            agentCompanyId,
+            {
+              agentCompanyId,
+              originalAgentName: record.AgentCompanyName,
+              selectedNavId: validVendorCodes.has(mappedNavId) ? mappedNavId : "",
+            },
+          ];
+        }),
+      ).values(),
+    );
+  };
+
+  const navigateToScreen = (screen: string) => {
+    if (screen === "Agent Mapping" && !hasExtracted) {
+      setActiveScreen("Generate Drafts");
+      return;
+    }
+
+    if (screen === "Invoice Review" && !isMappingComplete) {
+      setActiveScreen(hasExtracted ? "Agent Mapping" : "Generate Drafts");
+      return;
+    }
+
+    setActiveScreen(screen);
+  };
+
+  const extractData = (records: AgentPayReadyRecord[]) => {
+    setExtractedRecords(records);
+    setAgentMappings(buildAgentMappings(records));
+    setSuccessMessage("");
+  };
+
+  const updateVendor = (agentCompanyId: string, selectedNavId: string) => {
+    setAgentMappings((currentMappings) =>
+      currentMappings.map((mapping) =>
+        mapping.agentCompanyId === agentCompanyId ? { ...mapping, selectedNavId } : mapping,
+      ),
+    );
+  };
 
   const generateDraftInvoices = (records: AgentPayReadyRecord[]) => {
     const createdDate = new Date().toISOString().slice(0, 10);
     const groupedDrafts = new Map<string, DraftInvoiceRecord>();
 
     records.forEach((record) => {
-      const yearTerm = record.YT || `${record.TermYear}${record.TermNumber}`;
+      const yearTerm = getYearTerm(record);
       const agentCode = String(record.AgentCompanyID);
       const groupKey = `${agentCode}-${yearTerm}-${record.CampusName}`;
       const existingDraft = groupedDrafts.get(groupKey);
@@ -661,9 +816,19 @@ function App() {
     });
 
     const nextDraftInvoices = Array.from(groupedDrafts.values());
-    setDraftInvoices(nextDraftInvoices);
+    setTrackerRecords((currentRecords) => [...currentRecords, ...nextDraftInvoices]);
     setSuccessMessage(`${nextDraftInvoices.length} draft invoice records created.`);
     setActiveScreen("Invoice Tracker");
+  };
+
+  const advanceStatus = (draftName: string) => {
+    setTrackerRecords((currentRecords) =>
+      currentRecords.map((record) =>
+        record.DraftNm === draftName
+          ? { ...record, CurrentStatus: nextDraftStatus(record.CurrentStatus) }
+          : record,
+      ),
+    );
   };
 
   return (
@@ -678,8 +843,12 @@ function App() {
           {screens.map((screen) => (
             <button
               key={screen}
+              disabled={
+                (screen === "Agent Mapping" && !hasExtracted) ||
+                (screen === "Invoice Review" && !isMappingComplete)
+              }
               className={activeScreen === screen ? "active" : ""}
-              onClick={() => setActiveScreen(screen)}
+              onClick={() => navigateToScreen(screen)}
             >
               {screen}
             </button>
@@ -697,11 +866,19 @@ function App() {
         </header>
         <div className="workspace__content">
           <ActiveScreen
+            agentMappings={agentMappings}
             activeScreen={activeScreen}
-            draftInvoices={draftInvoices}
+            extractedRecords={extractedRecords}
+            hasExtracted={hasExtracted}
+            isMappingComplete={isMappingComplete}
+            onAdvanceStatus={advanceStatus}
+            onContinueMapping={() => setActiveScreen("Invoice Review")}
+            onExtractData={extractData}
             onGenerateDrafts={generateDraftInvoices}
-            setActiveScreen={setActiveScreen}
+            onUpdateVendor={updateVendor}
+            setActiveScreen={navigateToScreen}
             successMessage={successMessage}
+            trackerRecords={trackerRecords}
           />
         </div>
       </section>

@@ -86,6 +86,12 @@ button {
   color: #ffffff;
 }
 
+.sidebar__nav button:disabled {
+  color: #9caac4;
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
 .workspace {
   min-width: 0;
   flex: 1;
@@ -444,6 +450,11 @@ td {
   font-size: 0.9rem;
 }
 
+.side-panel-button {
+  margin-top: 1.25rem;
+  width: 100%;
+}
+
 select {
   display: block;
   width: 100%;
@@ -480,6 +491,24 @@ select {
   margin: 0;
   color: #787878;
   font-size: 0.9rem;
+}
+
+.empty-state {
+  display: flex;
+  min-height: 12rem;
+  align-items: center;
+  justify-content: center;
+  border: 1px dashed #c8c8c8;
+  background: #ffffff;
+  color: #787878;
+  padding: 2rem;
+  text-align: center;
+}
+
+.table-action {
+  min-height: 2rem;
+  padding: 0 0.7rem;
+  font-size: 0.85rem;
 }
 
 dl {

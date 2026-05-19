@@ -1,0 +1,42 @@
+[
+  {
+    "InvoiceNumber": "INV-2407",
+    "AgentCompanyName": "Sydney Education Partners",
+    "VendorCode": "A108000707",
+    "CampusName": "Sydney",
+    "Amount": 18450.0,
+    "Currency": "AUD",
+    "Status": "Ready for BC",
+    "LastUpdated": "2026-05-18"
+  },
+  {
+    "InvoiceNumber": "INV-2408",
+    "AgentCompanyName": "Han Study Group",
+    "VendorCode": "V000517",
+    "CampusName": "Melbourne",
+    "Amount": 11210.0,
+    "Currency": "AUD",
+    "Status": "Needs review",
+    "LastUpdated": "2026-05-18"
+  },
+  {
+    "InvoiceNumber": "INV-2409",
+    "AgentCompanyName": "Global Pathways",
+    "VendorCode": "A108001078",
+    "CampusName": "Adelaide",
+    "Amount": 27880.0,
+    "Currency": "AUD",
+    "Status": "Approved",
+    "LastUpdated": "2026-05-17"
+  },
+  {
+    "InvoiceNumber": "INV-2410",
+    "AgentCompanyName": "Jakarta Placement Co",
+    "VendorCode": "",
+    "CampusName": "Brisbane",
+    "Amount": 6430.0,
+    "Currency": "AUD",
+    "Status": "Mapping required",
+    "LastUpdated": "2026-05-16"
+  }
+]

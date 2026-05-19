@@ -227,9 +227,22 @@ button {
   background: #f7f4eb;
 }
 
+.secondary-button:disabled {
+  border-color: #dcdcdc;
+  background: #f2f2f2;
+  color: #a0a0a0;
+  cursor: not-allowed;
+}
+
 .stats-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.draft-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 1rem;
 }
 
@@ -289,6 +302,40 @@ button {
   color: #787878;
   font-size: 0.9rem;
   line-height: 1.5;
+}
+
+.mapping-toolbar {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 12rem)) auto;
+  gap: 1rem;
+  align-items: stretch;
+}
+
+.mapping-toolbar > div {
+  border: 1px solid #dcdcdc;
+  border-top: 1px solid #88774f;
+  background: #ffffff;
+  padding: 1rem;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+.mapping-toolbar p {
+  margin: 0;
+  color: #787878;
+  font-size: 0.85rem;
+}
+
+.mapping-toolbar strong {
+  display: block;
+  margin-top: 0.35rem;
+  color: #00205b;
+  font-size: 1.5rem;
+  line-height: 1;
+}
+
+.mapping-toolbar .secondary-button {
+  align-self: center;
+  justify-self: end;
 }
 
 .table-shell {
@@ -484,11 +531,20 @@ dd {
     grid-template-columns: 1fr;
   }
 
+  .mapping-toolbar {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .mapping-toolbar .secondary-button {
+    justify-self: start;
+  }
+
   .brand-panel__image {
     display: none;
   }
 
   .stats-grid,
+  .draft-summary-grid,
   .screen-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -516,7 +572,12 @@ dd {
     flex-direction: column;
   }
 
+  .mapping-toolbar {
+    grid-template-columns: 1fr;
+  }
+
   .stats-grid,
+  .draft-summary-grid,
   .screen-grid {
     grid-template-columns: 1fr;
   }

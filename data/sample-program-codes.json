@@ -1,0 +1,30 @@
+[
+  {
+    "ProgramCode": "AHCCAMCIIICC",
+    "ProgramName": "SIT30821 Certificate III in Commercial Cookery",
+    "CampusName": "Melbourne",
+    "ProgramStage": "Basic Cuisine",
+    "CommissionEligible": true
+  },
+  {
+    "ProgramCode": "AHCCAMCIVCC",
+    "ProgramName": "SIT40521 Certificate IV in Kitchen Management",
+    "CampusName": "Sydney",
+    "ProgramStage": "Intermediate Cuisine",
+    "CommissionEligible": true
+  },
+  {
+    "ProgramCode": "AHCCAMDIPHM",
+    "ProgramName": "Diploma of Hospitality Management",
+    "CampusName": "Adelaide",
+    "ProgramStage": "Hospitality Management",
+    "CommissionEligible": true
+  },
+  {
+    "ProgramCode": "AHCCAMADVPAT",
+    "ProgramName": "Advanced Diploma of Hospitality Management",
+    "CampusName": "Brisbane",
+    "ProgramStage": "Patisserie",
+    "CommissionEligible": true
+  }
+]

@@ -2,6 +2,7 @@ import { useState } from "react";
 import "./App.css";
 import logoUrl from "./assets/brand/lcb-australia-logo.png";
 import studentUrl from "./assets/brand/lcb-australia-student.png";
+import { getAgentPayReady, getAgentTagging, getVendors } from "./services/mockData";
 
 const screens = [
   "Home",
@@ -21,18 +22,6 @@ const stats = [
 ];
 
 const campuses = ["Adelaide", "Brisbane", "Melbourne", "Sydney"];
-
-const draftRows = [
-  ["AUS001", "Sydney Education Partners", "15", "$18,450", "Ready"],
-  ["KOR044", "Han Study Group", "9", "$11,210", "Draft"],
-  ["IND098", "Global Pathways", "22", "$27,880", "Ready"],
-];
-
-const mappingRows = [
-  ["AUS001", "Sydney Education Partners", "V000382", "Matched"],
-  ["KOR044", "Han Study Group", "V000517", "Needs check"],
-  ["IDN021", "Jakarta Placement Co", "-", "Unmapped"],
-];
 
 const reviewRows = [
   ["INV-2407", "Sydney Education Partners", "$18,450", "Approved"],
@@ -55,6 +44,42 @@ type SectionHeaderProps = {
   title: string;
   eyebrow: string;
   action?: string;
+};
+
+type SeenFilter = "All" | "Seen" | "Not Seen";
+
+type AgentPayReadyRecord = {
+  TermYear: number;
+  TermNumber: number;
+  CampusName: string;
+  ProgramName: string;
+  ProgramCode: string;
+  AgentCompanyID: number;
+  AgentCompanyName: string;
+  PaymentAmountSubject: number;
+  TotalPayment2: number;
+  PaymentStatus: string;
+  Seen: boolean;
+};
+
+type AgentTaggingRecord = {
+  Title: string;
+  AgentCompanyName: string;
+  "BC Agent Name": string;
+  "BC Vendor Code": string;
+  "Other Remarks": string;
+};
+
+type VendorRecord = {
+  ID: string;
+  "NAV ID": string;
+  "Vendor Name": string;
+};
+
+type AgentMappingRow = {
+  agentCompanyId: string;
+  originalAgentName: string;
+  selectedNavId: string;
 };
 
 function StatusBadge({ children }: { children: string }) {
@@ -155,45 +180,251 @@ function HomeScreen({ setActiveScreen }: { setActiveScreen: (screen: string) => 
   );
 }
 
+function uniqueOptions<T>(rows: T[], getValue: (row: T) => string | number) {
+  return Array.from(new Set(rows.map((row) => String(getValue(row))).filter(Boolean))).sort();
+}
+
+function formatCurrency(amount: number) {
+  return new Intl.NumberFormat("en-AU", {
+    currency: "AUD",
+    style: "currency",
+  }).format(amount);
+}
+
 function GenerateDraftsScreen() {
+  const agentPayReady = getAgentPayReady() as AgentPayReadyRecord[];
+  const [yearFilter, setYearFilter] = useState("All");
+  const [termFilter, setTermFilter] = useState("All");
+  const [campusFilter, setCampusFilter] = useState("All");
+  const [programFilter, setProgramFilter] = useState("All");
+  const [seenFilter, setSeenFilter] = useState<SeenFilter>("All");
+
+  const yearOptions = uniqueOptions(agentPayReady, (record) => record.TermYear);
+  const termOptions = uniqueOptions(agentPayReady, (record) => record.TermNumber);
+  const campusOptions = uniqueOptions(agentPayReady, (record) => record.CampusName);
+  const programOptions = uniqueOptions(agentPayReady, (record) => record.ProgramName);
+
+  const filteredRecords = agentPayReady.filter((record) => {
+    const matchesYear = yearFilter === "All" || String(record.TermYear) === yearFilter;
+    const matchesTerm = termFilter === "All" || String(record.TermNumber) === termFilter;
+    const matchesCampus = campusFilter === "All" || record.CampusName === campusFilter;
+    const matchesProgram = programFilter === "All" || record.ProgramName === programFilter;
+    const matchesSeen =
+      seenFilter === "All" ||
+      (seenFilter === "Seen" && record.Seen) ||
+      (seenFilter === "Not Seen" && !record.Seen);
+
+    return matchesYear && matchesTerm && matchesCampus && matchesProgram && matchesSeen;
+  });
+
+  const distinctAgentCount = new Set(
+    filteredRecords.map((record) => record.AgentCompanyID || record.AgentCompanyName),
+  ).size;
+
+  const previewRows = filteredRecords.slice(0, 25).map((record) => [
+    String(record.AgentCompanyID),
+    record.AgentCompanyName,
+    `${record.TermYear} T${record.TermNumber}`,
+    record.CampusName,
+    record.ProgramCode,
+    formatCurrency(record.PaymentAmountSubject),
+    record.Seen ? "Seen" : "Not Seen",
+  ]);
+
   return (
     <div className="screen-stack">
       <SectionHeader title="Generate Drafts" eyebrow="Draft generation" action="Generate drafts" />
       <div className="split-grid">
         <DataTable
-          columns={["Agent code", "Agent", "Students", "Commission", "Status"]}
-          rows={draftRows}
+          columns={["Agent ID", "Agent", "Term", "Campus", "Program", "Amount", "Seen"]}
+          rows={previewRows}
         />
         <aside className="side-panel">
-          <h3>Run settings</h3>
+          <h3>Filters</h3>
           <label>
-            Intake
-            <select>
-              <option>July 2026</option>
-              <option>October 2026</option>
+            Year
+            <select value={yearFilter} onChange={(event) => setYearFilter(event.target.value)}>
+              <option>All</option>
+              {yearOptions.map((year) => (
+                <option key={year}>{year}</option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Term
+            <select value={termFilter} onChange={(event) => setTermFilter(event.target.value)}>
+              <option>All</option>
+              {termOptions.map((term) => (
+                <option key={term}>{term}</option>
+              ))}
             </select>
           </label>
           <label>
             Campus
-            <select>
-              <option>All campuses</option>
-              <option>Sydney</option>
-              <option>Melbourne</option>
-              <option>Adelaide</option>
-              <option>Brisbane</option>
+            <select value={campusFilter} onChange={(event) => setCampusFilter(event.target.value)}>
+              <option>All</option>
+              {campusOptions.map((campus) => (
+                <option key={campus}>{campus}</option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Program
+            <select
+              value={programFilter}
+              onChange={(event) => setProgramFilter(event.target.value)}
+            >
+              <option>All</option>
+              {programOptions.map((program) => (
+                <option key={program}>{program}</option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Seen status
+            <select
+              value={seenFilter}
+              onChange={(event) => setSeenFilter(event.target.value as SeenFilter)}
+            >
+              <option>All</option>
+              <option>Seen</option>
+              <option>Not Seen</option>
             </select>
           </label>
         </aside>
+      </div>
+      <div className="draft-summary-grid">
+        <div className="stat-card">
+          <p>Total filtered records</p>
+          <strong>{filteredRecords.length}</strong>
+        </div>
+        <div className="stat-card">
+          <p>Distinct agent count</p>
+          <strong>{distinctAgentCount}</strong>
+        </div>
       </div>
     </div>
   );
 }
 
 function AgentMappingScreen() {
+  const agentPayReady = getAgentPayReady() as AgentPayReadyRecord[];
+  const agentTagging = getAgentTagging() as AgentTaggingRecord[];
+  const vendors = getVendors() as VendorRecord[];
+
+  const taggingByAgentId = new Map(
+    agentTagging.map((record) => [record.Title, record]),
+  );
+  const vendorsByNavId = new Map(
+    vendors
+      .filter((vendor) => vendor["NAV ID"] && vendor["Vendor Name"])
+      .map((vendor) => [vendor["NAV ID"], vendor]),
+  );
+
+  const agentRows = Array.from(
+    new Map(
+      agentPayReady.map((record) => {
+        const agentCompanyId = String(record.AgentCompanyID);
+        const tagging = taggingByAgentId.get(agentCompanyId);
+
+        return [
+          agentCompanyId,
+          {
+            agentCompanyId,
+            originalAgentName: record.AgentCompanyName,
+            selectedNavId: tagging?.["BC Vendor Code"] ?? "",
+          },
+        ];
+      }),
+    ).values(),
+  );
+
+  const [agentMappings, setAgentMappings] = useState<AgentMappingRow[]>(agentRows);
+
+  const vendorOptions = vendors
+    .filter((vendor) => vendor["NAV ID"] && vendor["Vendor Name"])
+    .sort((a, b) => a["Vendor Name"].localeCompare(b["Vendor Name"]));
+
+  const updateVendor = (agentCompanyId: string, selectedNavId: string) => {
+    setAgentMappings((currentMappings) =>
+      currentMappings.map((mapping) =>
+        mapping.agentCompanyId === agentCompanyId ? { ...mapping, selectedNavId } : mapping,
+      ),
+    );
+  };
+
+  const allAgentsMapped = agentMappings.every((mapping) => {
+    const vendor = vendorsByNavId.get(mapping.selectedNavId);
+    return Boolean(vendor?.["Vendor Name"] && vendor["NAV ID"]);
+  });
+
   return (
     <div className="screen-stack">
-      <SectionHeader title="Agent Mapping" eyebrow="Agent setup" action="Save mappings" />
-      <DataTable columns={["Agent code", "Agent name", "Vendor no.", "Status"]} rows={mappingRows} />
+      <SectionHeader title="Agent Mapping" eyebrow="Agent setup" />
+      <div className="mapping-toolbar">
+        <div>
+          <p>Agents to map</p>
+          <strong>{agentMappings.length}</strong>
+        </div>
+        <div>
+          <p>Mapped agents</p>
+          <strong>
+            {
+              agentMappings.filter((mapping) => vendorsByNavId.has(mapping.selectedNavId))
+                .length
+            }
+          </strong>
+        </div>
+        <button className="secondary-button" disabled={!allAgentsMapped}>
+          Continue
+        </button>
+      </div>
+      <div className="table-shell">
+        <table>
+          <thead>
+            <tr>
+              <th>Agent ID</th>
+              <th>Original Agent Name</th>
+              <th>Selected Vendor Name</th>
+              <th>NAVID / vendor code</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {agentMappings.map((mapping) => {
+              const selectedVendor = vendorsByNavId.get(mapping.selectedNavId);
+              const isMapped = Boolean(selectedVendor?.["Vendor Name"] && selectedVendor["NAV ID"]);
+
+              return (
+                <tr key={mapping.agentCompanyId}>
+                  <td>{mapping.agentCompanyId}</td>
+                  <td>{mapping.originalAgentName}</td>
+                  <td>
+                    <select
+                      aria-label={`Vendor for ${mapping.originalAgentName}`}
+                      value={mapping.selectedNavId}
+                      onChange={(event) =>
+                        updateVendor(mapping.agentCompanyId, event.target.value)
+                      }
+                    >
+                      <option value="">Select vendor</option>
+                      {vendorOptions.map((vendor) => (
+                        <option key={`${vendor.ID}-${vendor["NAV ID"]}`} value={vendor["NAV ID"]}>
+                          {vendor["Vendor Name"]}
+                        </option>
+                      ))}
+                    </select>
+                  </td>
+                  <td>{selectedVendor?.["NAV ID"] ?? ""}</td>
+                  <td>
+                    <StatusBadge>{isMapped ? "Matched" : "Needs mapping"}</StatusBadge>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

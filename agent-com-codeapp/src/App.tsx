@@ -1,5 +1,7 @@
 import { useState } from "react";
 import "./App.css";
+import logoUrl from "./assets/brand/lcb-australia-logo.png";
+import studentUrl from "./assets/brand/lcb-australia-student.png";
 
 const screens = [
   "Home",
@@ -111,7 +113,7 @@ function HomeScreen({ setActiveScreen }: { setActiveScreen: (screen: string) => 
       <section className="brand-panel">
         <div className="brand-panel__content">
           <img
-            src="/lcb-australia-logo.png"
+            src={logoUrl}
             alt="Le Cordon Bleu Australia"
             className="brand-logo brand-logo--large"
           />
@@ -128,7 +130,7 @@ function HomeScreen({ setActiveScreen }: { setActiveScreen: (screen: string) => 
           </div>
         </div>
         <div className="brand-panel__image">
-          <img src="/lcb-australia-student.png" alt="Le Cordon Bleu Australia student" />
+          <img src={studentUrl} alt="Le Cordon Bleu Australia student" />
         </div>
       </section>
 
@@ -221,7 +223,7 @@ function UploadInvoiceScreen() {
       <div className="split-grid split-grid--upload">
         <div className="upload-panel">
           <img
-            src="/lcb-australia-logo.png"
+            src={logoUrl}
             alt="Le Cordon Bleu Australia"
             className="brand-logo"
           />
@@ -291,7 +293,7 @@ function App() {
     <main className="app-shell">
       <aside className="sidebar">
         <div className="sidebar__brand">
-          <img src="/lcb-australia-logo.png" alt="Le Cordon Bleu Australia" />
+          <img src={logoUrl} alt="Le Cordon Bleu Australia" />
           <p>Finance team</p>
           <h1>Agent Commission</h1>
         </div>

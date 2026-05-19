@@ -3,6 +3,14 @@ import "./App.css";
 import logoUrl from "./assets/brand/lcb-australia-logo.png";
 import studentUrl from "./assets/brand/lcb-australia-student.png";
 import { getAgentPayReady, getAgentTagging, getVendors } from "./services/mockData";
+import {
+  calculateBaseAmount,
+  calculateCommissionAmount,
+  calculateCommissionRate,
+  calculateNonFeeAmount,
+  calculateTotalPayment,
+  getProgramCodeMapping,
+} from "./rules/commission";
 
 const screens = [
   "Home",
@@ -22,12 +30,6 @@ const stats = [
 ];
 
 const campuses = ["Adelaide", "Brisbane", "Melbourne", "Sydney"];
-
-const reviewRows = [
-  ["INV-2407", "Sydney Education Partners", "$18,450", "Approved"],
-  ["INV-2408", "Han Study Group", "$11,210", "Missing ABN"],
-  ["INV-2409", "Global Pathways", "$27,880", "Approved"],
-];
 
 const trackerRows = [
   ["INV-2399", "Submitted", "10 May 2026", "$9,820"],
@@ -54,6 +56,7 @@ type AgentPayReadyRecord = {
   CampusName: string;
   ProgramName: string;
   ProgramCode: string;
+  StudentName: string;
   AgentCompanyID: number;
   AgentCompanyName: string;
   PaymentAmountSubject: number;
@@ -430,10 +433,39 @@ function AgentMappingScreen() {
 }
 
 function InvoiceReviewScreen() {
+  const agentPayReady = getAgentPayReady() as AgentPayReadyRecord[];
+
+  const invoiceReviewRows = agentPayReady.map((record) => [
+    record.AgentCompanyName,
+    record.StudentName.trim() || "-",
+    record.ProgramName,
+    record.CampusName,
+    formatCurrency(calculateTotalPayment(record)),
+    formatCurrency(calculateNonFeeAmount(record)),
+    formatCurrency(calculateBaseAmount(record)),
+    `${calculateCommissionRate(record)}%`,
+    formatCurrency(calculateCommissionAmount(record)),
+    getProgramCodeMapping(record).programCode,
+  ]);
+
   return (
     <div className="screen-stack">
       <SectionHeader title="Invoice Review" eyebrow="Approval queue" action="Approve selected" />
-      <DataTable columns={["Invoice", "Agent", "Amount", "Review status"]} rows={reviewRows} />
+      <DataTable
+        columns={[
+          "Agent",
+          "Student",
+          "Program",
+          "Campus",
+          "Total Payment",
+          "Non Fee",
+          "Base Amount",
+          "Commission Rate",
+          "Commission Amount",
+          "Program Code",
+        ]}
+        rows={invoiceReviewRows}
+      />
     </div>
   );
 }

@@ -2,12 +2,13 @@ import { useState } from "react";
 import "./App.css";
 import logoUrl from "./assets/brand/lcb-australia-logo.png";
 import studentUrl from "./assets/brand/lcb-australia-student.png";
+import { extractAgentPayReady } from "./services/agentPayService";
+import { getAgentMappings, getVendors } from "./services/vendorService";
 import {
-  getAgentPayReady,
-  getAgentTagging,
+  createDraftInvoices as createDraftInvoicesService,
   getInvoiceTracker,
-  getVendors,
-} from "./services/mockData";
+  updateInvoiceStatus,
+} from "./services/invoiceTrackerService";
 import {
   baseAmount,
   commissionAmount,
@@ -79,16 +80,6 @@ type VendorRecord = {
   ID: string;
   "NAV ID": string;
   "Vendor Name": string;
-};
-
-type MockInvoiceTrackerRecord = {
-  InvoiceNumber: string;
-  AgentCompanyName: string;
-  VendorCode: string;
-  CampusName: string;
-  Amount: number;
-  Status: string;
-  LastUpdated: string;
 };
 
 type AgentMappingRow = {
@@ -240,17 +231,7 @@ function nextDraftStatus(status: DraftStatus) {
 }
 
 function createInitialTrackerRecords() {
-  return (getInvoiceTracker() as MockInvoiceTrackerRecord[]).map((record) => ({
-    AgentCode: record.VendorCode || "-",
-    AgentName: record.AgentCompanyName,
-    Campus: record.CampusName,
-    CreatedDate: record.LastUpdated,
-    CurrentStatus: "New" as DraftStatus,
-    DraftInvoiceLink: "#" as const,
-    DraftNm: record.InvoiceNumber,
-    TotalCommission: record.Amount,
-    YearTerm: "Mock",
-  }));
+  return getInvoiceTracker() as DraftInvoiceRecord[];
 }
 
 function GenerateDraftsScreen({
@@ -262,7 +243,7 @@ function GenerateDraftsScreen({
   hasExtracted: boolean;
   onExtractData: (records: AgentPayReadyRecord[]) => void;
 }) {
-  const agentPayReady = getAgentPayReady() as AgentPayReadyRecord[];
+  const agentPayReady = extractAgentPayReady() as AgentPayReadyRecord[];
   const [yearFilter, setYearFilter] = useState("All");
   const [termFilter, setTermFilter] = useState("All");
   const [campusFilter, setCampusFilter] = useState("All");
@@ -274,18 +255,14 @@ function GenerateDraftsScreen({
   const campusOptions = uniqueOptions(agentPayReady, (record) => record.CampusName);
   const programOptions = uniqueOptions(agentPayReady, (record) => record.ProgramName);
 
-  const getFilteredRecords = () => agentPayReady.filter((record) => {
-    const matchesYear = yearFilter === "All" || String(record.TermYear) === yearFilter;
-    const matchesTerm = termFilter === "All" || String(record.TermNumber) === termFilter;
-    const matchesCampus = campusFilter === "All" || record.CampusName === campusFilter;
-    const matchesProgram = programFilter === "All" || record.ProgramName === programFilter;
-    const matchesSeen =
-      seenFilter === "All" ||
-      (seenFilter === "Seen" && record.Seen) ||
-      (seenFilter === "Not Seen" && !record.Seen);
-
-    return matchesYear && matchesTerm && matchesCampus && matchesProgram && matchesSeen;
-  });
+  const getFilteredRecords = () =>
+    extractAgentPayReady({
+      campus: campusFilter,
+      program: programFilter,
+      seen: seenFilter,
+      term: termFilter,
+      year: yearFilter,
+    }) as AgentPayReadyRecord[];
 
   const distinctAgentCount = new Set(
     extractedRecords.map((record) => record.AgentCompanyID || record.AgentCompanyName),
@@ -730,7 +707,7 @@ function App() {
     hasExtracted && agentMappings.length > 0 && agentMappings.every(isMappedAgent);
 
   const buildAgentMappings = (records: AgentPayReadyRecord[]) => {
-    const agentTagging = getAgentTagging() as AgentTaggingRecord[];
+    const agentTagging = getAgentMappings() as AgentTaggingRecord[];
     const vendors = getVendors() as VendorRecord[];
     const taggingByAgentId = new Map(agentTagging.map((record) => [record.Title, record]));
     const validVendorCodes = new Set(
@@ -815,20 +792,21 @@ function App() {
       });
     });
 
-    const nextDraftInvoices = Array.from(groupedDrafts.values());
-    setTrackerRecords((currentRecords) => [...currentRecords, ...nextDraftInvoices]);
+    const nextDraftInvoices = createDraftInvoicesService(Array.from(groupedDrafts.values()));
+    setTrackerRecords(getInvoiceTracker() as DraftInvoiceRecord[]);
     setSuccessMessage(`${nextDraftInvoices.length} draft invoice records created.`);
     setActiveScreen("Invoice Tracker");
   };
 
   const advanceStatus = (draftName: string) => {
-    setTrackerRecords((currentRecords) =>
-      currentRecords.map((record) =>
-        record.DraftNm === draftName
-          ? { ...record, CurrentStatus: nextDraftStatus(record.CurrentStatus) }
-          : record,
-      ),
-    );
+    const currentRecord = trackerRecords.find((record) => record.DraftNm === draftName);
+
+    if (!currentRecord) {
+      return;
+    }
+
+    updateInvoiceStatus(draftName, nextDraftStatus(currentRecord.CurrentStatus));
+    setTrackerRecords(getInvoiceTracker() as DraftInvoiceRecord[]);
   };
 
   return (

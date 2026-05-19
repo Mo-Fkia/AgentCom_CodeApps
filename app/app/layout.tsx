@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Agent Commission",
-  description: "Mock layout for the Agent Commission app",
+  title: "LCB Australia Agent Commission",
+  description: "Mock layout for the Le Cordon Bleu Australia Finance team",
 };
 
 export default function RootLayout({

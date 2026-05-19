@@ -30,6 +30,7 @@ export type AgentPayReadyRecord = {
 };
 
 const dataMode = (import.meta.env.VITE_DATA_MODE ?? "mock") as DataMode;
+const agentPayExtractUrl = import.meta.env.VITE_AGENT_PAY_EXTRACT_URL;
 
 function extractAgentPayReadyMock(filters: AgentPayReadyFilters = {}) {
   const records = getAgentPayReady() as AgentPayReadyRecord[];
@@ -53,12 +54,33 @@ function extractAgentPayReadyMock(filters: AgentPayReadyFilters = {}) {
   });
 }
 
-function extractAgentPayReadyReal(filters: AgentPayReadyFilters = {}) {
-  void filters;
+async function extractAgentPayReadyReal(filters: AgentPayReadyFilters = {}) {
+  if (!agentPayExtractUrl) {
+    throw new Error("VITE_AGENT_PAY_EXTRACT_URL is not configured.");
+  }
+
   // Future real-data hook:
-  // Call the approved SQL-backed API or Power Automate flow here, then normalize
-  // the response into AgentPayReadyRecord[] before returning it to the UI.
-  throw new Error("Real SQL extraction is not connected yet.");
+  // This placeholder posts to the approved Power Automate endpoint. The flow can
+  // perform the SQL extraction and return rows shaped like AgentPayReadyRecord[].
+  const response = await fetch(agentPayExtractUrl, {
+    body: JSON.stringify({
+      campus: filters.campus,
+      programs: filters.program && filters.program !== "All" ? [filters.program] : [],
+      seenFilter: filters.seen,
+      term: filters.term,
+      year: filters.year,
+    }),
+    headers: {
+      "Content-Type": "application/json",
+    },
+    method: "POST",
+  });
+
+  if (!response.ok) {
+    throw new Error(`Agent pay extraction failed with status ${response.status}.`);
+  }
+
+  return (await response.json()) as AgentPayReadyRecord[];
 }
 
 export function extractAgentPayReady(filters: AgentPayReadyFilters = {}) {

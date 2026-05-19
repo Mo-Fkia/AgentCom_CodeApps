@@ -2,7 +2,7 @@ import { useState } from "react";
 import "./App.css";
 import logoUrl from "./assets/brand/lcb-australia-logo.png";
 import studentUrl from "./assets/brand/lcb-australia-student.png";
-import { extractAgentPayReady } from "./services/agentPayService";
+import { extractAgentPayReady, getAgentPayFilterOptions } from "./services/agentPayService";
 import { getAgentMappings, getVendors } from "./services/vendorService";
 import {
   createDraftInvoices as createDraftInvoicesService,
@@ -39,8 +39,16 @@ const campuses = ["Adelaide", "Brisbane", "Melbourne", "Sydney"];
 
 type DataTableProps = {
   columns: string[];
-  rows: string[][];
+  rows: DataTableRow[];
 };
+
+type DataTableRow =
+  | string[]
+  | {
+      AgentPayReadyID?: number | string;
+      cells: string[];
+      id?: number | string;
+    };
 
 type SectionHeaderProps = {
   title: string;
@@ -57,15 +65,19 @@ type AgentPayReadyRecord = {
   CampusName: string;
   ProgramName: string;
   ProgramCode: string;
+  ProgramStage?: string;
   StudentName: string;
   EmpID: number;
+  StudentID?: number;
   AgentCompanyID: number;
   AgentCompanyName: string;
+  OriginalAgentCompanyName?: string;
   PaymentAmountSubject: number;
   TotalPayment2: number;
   PaymentStatus: string;
   YT: string;
   Seen: boolean;
+  AgentPayReadyID?: number;
 };
 
 type AgentTaggingRecord = {
@@ -114,6 +126,15 @@ function StatusBadge({ children }: { children: string }) {
 }
 
 function DataTable({ columns, rows }: DataTableProps) {
+  const getRowCells = (row: DataTableRow) => (Array.isArray(row) ? row : row.cells);
+  const getRowKey = (row: DataTableRow, index: number) => {
+    if (Array.isArray(row)) {
+      return `${index}`;
+    }
+
+    return String(row.AgentPayReadyID ?? row.id ?? index);
+  };
+
   return (
     <div className="table-shell">
       <table>
@@ -125,15 +146,19 @@ function DataTable({ columns, rows }: DataTableProps) {
           </tr>
         </thead>
         <tbody>
-          {rows.map((row) => (
-            <tr key={row.join("-")}>
-              {row.map((cell, index) => (
-                <td key={`${cell}-${index}`}>
-                  {index === row.length - 1 ? <StatusBadge>{cell}</StatusBadge> : cell}
-                </td>
-              ))}
-            </tr>
-          ))}
+          {rows.map((row, rowIndex) => {
+            const cells = getRowCells(row);
+
+            return (
+              <tr key={getRowKey(row, rowIndex)}>
+                {cells.map((cell, cellIndex) => (
+                  <td key={`${rowIndex}-${cellIndex}`}>
+                    {cellIndex === cells.length - 1 ? <StatusBadge>{cell}</StatusBadge> : cell}
+                  </td>
+                ))}
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>
@@ -207,7 +232,7 @@ function HomeScreen({ setActiveScreen }: { setActiveScreen: (screen: string) => 
 function uniqueOptions<T>(rows: T[] | unknown, getValue: (row: T) => string | number) {
   const safeRows = Array.isArray(rows) ? (rows as T[]) : [];
 
-  return Array.from(new Set(safeRows.map((row) => String(getValue(row))).filter(Boolean))).sort();
+  return Array.from(new Set(safeRows.map((row) => String(getValue(row))).filter(Boolean)));
 }
 
 function formatCurrency(amount: number) {
@@ -252,22 +277,24 @@ function GenerateDraftsScreen({
   const [seenFilter, setSeenFilter] = useState<SeenFilter>("All");
   const [extractError, setExtractError] = useState("");
   const [isExtracting, setIsExtracting] = useState(false);
+  const filterOptions = getAgentPayFilterOptions();
+  const extractedTermOptions = extractedRecords.map((record) => `T${record.TermNumber}`);
 
-  const yearOptions = uniqueOptions<AgentPayReadyRecord>(
-    extractedRecords,
-    (record) => record.TermYear,
+  const yearOptions = uniqueOptions<string>(
+    [...filterOptions.years, ...extractedRecords.map((record) => String(record.TermYear))],
+    (option) => option,
   );
-  const termOptions = uniqueOptions<AgentPayReadyRecord>(
-    extractedRecords,
-    (record) => record.TermNumber,
+  const termOptions = uniqueOptions<string>(
+    [...filterOptions.terms, ...extractedTermOptions],
+    (option) => option,
   );
-  const campusOptions = uniqueOptions<AgentPayReadyRecord>(
-    extractedRecords,
-    (record) => record.CampusName,
+  const campusOptions = uniqueOptions<string>(
+    [...filterOptions.campuses, ...extractedRecords.map((record) => record.CampusName)],
+    (option) => option,
   );
-  const programOptions = uniqueOptions<AgentPayReadyRecord>(
-    extractedRecords,
-    (record) => record.ProgramName,
+  const programOptions = uniqueOptions<string>(
+    [...filterOptions.programs, ...extractedRecords.map((record) => record.ProgramName)],
+    (option) => option,
   );
 
   const handleExtractData = async () => {
@@ -299,15 +326,19 @@ function GenerateDraftsScreen({
     extractedRecords.map((record) => record.AgentCompanyID || record.AgentCompanyName),
   ).size;
 
-  const previewRows = extractedRecords.slice(0, 25).map((record) => [
-    String(record.AgentCompanyID),
-    record.AgentCompanyName,
-    `${record.TermYear} T${record.TermNumber}`,
-    record.CampusName,
-    record.ProgramCode,
-    formatCurrency(record.PaymentAmountSubject),
-    record.Seen ? "Seen" : "Not Seen",
-  ]);
+  const previewRows = extractedRecords.slice(0, 25).map((record, index) => ({
+    AgentPayReadyID: record.AgentPayReadyID,
+    cells: [
+      String(record.AgentCompanyID),
+      record.OriginalAgentCompanyName || record.AgentCompanyName,
+      `${record.TermYear} T${record.TermNumber}`,
+      record.CampusName,
+      record.ProgramCode,
+      formatCurrency(record.PaymentAmountSubject),
+      record.Seen ? "Seen" : "Not Seen",
+    ],
+    id: index,
+  }));
 
   return (
     <div className="screen-stack">
@@ -348,7 +379,6 @@ function GenerateDraftsScreen({
               value={programFilter}
               onChange={(event) => setProgramFilter(event.target.value)}
             >
-              <option>All</option>
               {programOptions.map((program) => (
                 <option key={program}>{program}</option>
               ))}
@@ -498,20 +528,24 @@ function InvoiceReviewScreen({
   extractedRecords: AgentPayReadyRecord[];
   onGenerateDrafts: (records: AgentPayReadyRecord[]) => void;
 }) {
-  const invoiceReviewRows = extractedRecords.map((record) => [
-    record.AgentCompanyName,
-    record.StudentName.trim() || "-",
-    String(record.EmpID),
-    record.ProgramName,
-    record.CampusName,
-    getYearTerm(record),
-    formatCurrency(totalPayment(record)),
-    formatCurrency(nonFee(record)),
-    formatCurrency(baseAmount(record)),
-    `${commissionRate(record)}%`,
-    formatCurrency(commissionAmount(record)),
-    programCode(record).programCode,
-  ]);
+  const invoiceReviewRows = extractedRecords.map((record, index) => ({
+    AgentPayReadyID: record.AgentPayReadyID,
+    cells: [
+      record.OriginalAgentCompanyName || record.AgentCompanyName,
+      record.StudentName.trim() || "-",
+      String(record.StudentID ?? record.EmpID),
+      record.ProgramName,
+      record.CampusName,
+      getYearTerm(record),
+      formatCurrency(totalPayment(record)),
+      formatCurrency(nonFee(record)),
+      formatCurrency(baseAmount(record)),
+      `${commissionRate(record)}%`,
+      formatCurrency(commissionAmount(record)),
+      programCode(record).programCode,
+    ],
+    id: index,
+  }));
 
   return (
     <div className="screen-stack">
@@ -763,7 +797,7 @@ function App() {
             agentCompanyId,
             {
               agentCompanyId,
-              originalAgentName: record.AgentCompanyName,
+              originalAgentName: record.OriginalAgentCompanyName || record.AgentCompanyName,
               selectedNavId: validVendorCodes.has(mappedNavId) ? mappedNavId : "",
             },
           ];
@@ -819,7 +853,7 @@ function App() {
         DraftInvoiceLink: "#",
         DraftNm: `DRFT-${yearTerm}-${agentCode}-${record.CampusName}`,
         AgentCode: agentCode,
-        AgentName: record.AgentCompanyName,
+        AgentName: record.OriginalAgentCompanyName || record.AgentCompanyName,
         Campus: record.CampusName,
         CreatedDate: createdDate,
         CurrentStatus: "New",

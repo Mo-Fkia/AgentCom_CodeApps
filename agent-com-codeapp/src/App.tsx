@@ -4,12 +4,12 @@ import logoUrl from "./assets/brand/lcb-australia-logo.png";
 import studentUrl from "./assets/brand/lcb-australia-student.png";
 import { getAgentPayReady, getAgentTagging, getVendors } from "./services/mockData";
 import {
-  calculateBaseAmount,
-  calculateCommissionAmount,
-  calculateCommissionRate,
-  calculateNonFeeAmount,
-  calculateTotalPayment,
-  getProgramCodeMapping,
+  baseAmount,
+  commissionAmount,
+  commissionRate,
+  nonFee,
+  programCode,
+  totalPayment,
 } from "./rules/commission";
 
 const screens = [
@@ -57,11 +57,13 @@ type AgentPayReadyRecord = {
   ProgramName: string;
   ProgramCode: string;
   StudentName: string;
+  EmpID: number;
   AgentCompanyID: number;
   AgentCompanyName: string;
   PaymentAmountSubject: number;
   TotalPayment2: number;
   PaymentStatus: string;
+  YT: string;
   Seen: boolean;
 };
 
@@ -438,14 +440,16 @@ function InvoiceReviewScreen() {
   const invoiceReviewRows = agentPayReady.map((record) => [
     record.AgentCompanyName,
     record.StudentName.trim() || "-",
+    String(record.EmpID),
     record.ProgramName,
     record.CampusName,
-    formatCurrency(calculateTotalPayment(record)),
-    formatCurrency(calculateNonFeeAmount(record)),
-    formatCurrency(calculateBaseAmount(record)),
-    `${calculateCommissionRate(record)}%`,
-    formatCurrency(calculateCommissionAmount(record)),
-    getProgramCodeMapping(record).programCode,
+    record.YT || `${record.TermYear}${record.TermNumber}`,
+    formatCurrency(totalPayment(record)),
+    formatCurrency(nonFee(record)),
+    formatCurrency(baseAmount(record)),
+    `${commissionRate(record)}%`,
+    formatCurrency(commissionAmount(record)),
+    programCode(record).programCode,
   ]);
 
   return (
@@ -455,8 +459,10 @@ function InvoiceReviewScreen() {
         columns={[
           "Agent",
           "Student",
+          "Student ID",
           "Program",
           "Campus",
+          "YearTerm",
           "Total Payment",
           "Non Fee",
           "Base Amount",

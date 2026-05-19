@@ -46,6 +46,7 @@ type SectionHeaderProps = {
   title: string;
   eyebrow: string;
   action?: string;
+  onAction?: () => void;
 };
 
 type SeenFilter = "All" | "Seen" | "Not Seen";
@@ -87,6 +88,18 @@ type AgentMappingRow = {
   selectedNavId: string;
 };
 
+type DraftInvoiceRecord = {
+  DraftNm: string;
+  AgentName: string;
+  AgentCode: string;
+  YearTerm: string;
+  Campus: string;
+  TotalCommission: number;
+  CurrentStatus: "New";
+  CreatedDate: string;
+  DraftInvoiceLink: "#";
+};
+
 function StatusBadge({ children }: { children: string }) {
   const tone =
     children.includes("Approved") || children.includes("Ready") || children.includes("Matched")
@@ -125,14 +138,18 @@ function DataTable({ columns, rows }: DataTableProps) {
   );
 }
 
-function SectionHeader({ title, eyebrow, action }: SectionHeaderProps) {
+function SectionHeader({ title, eyebrow, action, onAction }: SectionHeaderProps) {
   return (
     <div className="section-header">
       <div>
         <p className="eyebrow">{eyebrow}</p>
         <h2>{title}</h2>
       </div>
-      {action ? <button className="secondary-button">{action}</button> : null}
+      {action ? (
+        <button className="secondary-button" onClick={onAction}>
+          {action}
+        </button>
+      ) : null}
     </div>
   );
 }
@@ -434,7 +451,11 @@ function AgentMappingScreen() {
   );
 }
 
-function InvoiceReviewScreen() {
+function InvoiceReviewScreen({
+  onGenerateDrafts,
+}: {
+  onGenerateDrafts: (records: AgentPayReadyRecord[]) => void;
+}) {
   const agentPayReady = getAgentPayReady() as AgentPayReadyRecord[];
 
   const invoiceReviewRows = agentPayReady.map((record) => [
@@ -454,7 +475,12 @@ function InvoiceReviewScreen() {
 
   return (
     <div className="screen-stack">
-      <SectionHeader title="Invoice Review" eyebrow="Approval queue" action="Approve selected" />
+      <SectionHeader
+        title="Invoice Review"
+        eyebrow="Approval queue"
+        action="Generate Drafts"
+        onAction={() => onGenerateDrafts(agentPayReady)}
+      />
       <DataTable
         columns={[
           "Agent",
@@ -476,11 +502,47 @@ function InvoiceReviewScreen() {
   );
 }
 
-function InvoiceTrackerScreen() {
+function InvoiceTrackerScreen({
+  draftInvoices,
+  successMessage,
+}: {
+  draftInvoices: DraftInvoiceRecord[];
+  successMessage: string;
+}) {
+  const generatedRows = draftInvoices.map((draft) => [
+    draft.DraftNm,
+    draft.AgentName,
+    draft.AgentCode,
+    draft.YearTerm,
+    draft.Campus,
+    formatCurrency(draft.TotalCommission),
+    draft.CreatedDate,
+    draft.DraftInvoiceLink,
+    draft.CurrentStatus,
+  ]);
+
   return (
     <div className="screen-stack">
       <SectionHeader title="Invoice Tracker" eyebrow="Progress" action="Export list" />
-      <DataTable columns={["Invoice", "Status", "Last updated", "Amount"]} rows={trackerRows} />
+      {successMessage ? <div className="success-message">{successMessage}</div> : null}
+      <DataTable
+        columns={
+          generatedRows.length > 0
+            ? [
+                "Draft",
+                "Agent Name",
+                "Agent Code",
+                "YearTerm",
+                "Campus",
+                "Total Commission",
+                "Created Date",
+                "Draft Link",
+                "Status",
+              ]
+            : ["Invoice", "Status", "Last updated", "Amount"]
+        }
+        rows={generatedRows.length > 0 ? generatedRows : trackerRows}
+      />
     </div>
   );
 }
@@ -542,21 +604,67 @@ function SendToBcScreen() {
 function ActiveScreen({
   activeScreen,
   setActiveScreen,
+  draftInvoices,
+  onGenerateDrafts,
+  successMessage,
 }: {
   activeScreen: string;
   setActiveScreen: (screen: string) => void;
+  draftInvoices: DraftInvoiceRecord[];
+  onGenerateDrafts: (records: AgentPayReadyRecord[]) => void;
+  successMessage: string;
 }) {
   if (activeScreen === "Home") return <HomeScreen setActiveScreen={setActiveScreen} />;
   if (activeScreen === "Generate Drafts") return <GenerateDraftsScreen />;
   if (activeScreen === "Agent Mapping") return <AgentMappingScreen />;
-  if (activeScreen === "Invoice Review") return <InvoiceReviewScreen />;
-  if (activeScreen === "Invoice Tracker") return <InvoiceTrackerScreen />;
+  if (activeScreen === "Invoice Review") {
+    return <InvoiceReviewScreen onGenerateDrafts={onGenerateDrafts} />;
+  }
+  if (activeScreen === "Invoice Tracker") {
+    return <InvoiceTrackerScreen draftInvoices={draftInvoices} successMessage={successMessage} />;
+  }
   if (activeScreen === "Upload Invoice") return <UploadInvoiceScreen />;
   return <SendToBcScreen />;
 }
 
 function App() {
   const [activeScreen, setActiveScreen] = useState("Home");
+  const [draftInvoices, setDraftInvoices] = useState<DraftInvoiceRecord[]>([]);
+  const [successMessage, setSuccessMessage] = useState("");
+
+  const generateDraftInvoices = (records: AgentPayReadyRecord[]) => {
+    const createdDate = new Date().toISOString().slice(0, 10);
+    const groupedDrafts = new Map<string, DraftInvoiceRecord>();
+
+    records.forEach((record) => {
+      const yearTerm = record.YT || `${record.TermYear}${record.TermNumber}`;
+      const agentCode = String(record.AgentCompanyID);
+      const groupKey = `${agentCode}-${yearTerm}-${record.CampusName}`;
+      const existingDraft = groupedDrafts.get(groupKey);
+
+      if (existingDraft) {
+        existingDraft.TotalCommission += commissionAmount(record);
+        return;
+      }
+
+      groupedDrafts.set(groupKey, {
+        DraftInvoiceLink: "#",
+        DraftNm: `DRFT-${yearTerm}-${agentCode}-${record.CampusName}`,
+        AgentCode: agentCode,
+        AgentName: record.AgentCompanyName,
+        Campus: record.CampusName,
+        CreatedDate: createdDate,
+        CurrentStatus: "New",
+        TotalCommission: commissionAmount(record),
+        YearTerm: yearTerm,
+      });
+    });
+
+    const nextDraftInvoices = Array.from(groupedDrafts.values());
+    setDraftInvoices(nextDraftInvoices);
+    setSuccessMessage(`${nextDraftInvoices.length} draft invoice records created.`);
+    setActiveScreen("Invoice Tracker");
+  };
 
   return (
     <main className="app-shell">
@@ -588,7 +696,13 @@ function App() {
           <span>No external connections</span>
         </header>
         <div className="workspace__content">
-          <ActiveScreen activeScreen={activeScreen} setActiveScreen={setActiveScreen} />
+          <ActiveScreen
+            activeScreen={activeScreen}
+            draftInvoices={draftInvoices}
+            onGenerateDrafts={generateDraftInvoices}
+            setActiveScreen={setActiveScreen}
+            successMessage={successMessage}
+          />
         </div>
       </section>
     </main>

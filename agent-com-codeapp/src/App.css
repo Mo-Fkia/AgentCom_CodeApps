@@ -338,6 +338,15 @@ button {
   justify-self: end;
 }
 
+.success-message {
+  border: 1px solid #cfc39d;
+  border-left: 4px solid #88774f;
+  background: #fbf8ef;
+  color: #00205b;
+  padding: 0.85rem 1rem;
+  font-weight: 700;
+}
+
 .table-shell {
   overflow-x: auto;
   border: 1px solid #dcdcdc;

@@ -3,7 +3,7 @@ import "./App.css";
 import logoUrl from "./assets/brand/lcb-australia-logo.png";
 import studentUrl from "./assets/brand/lcb-australia-student.png";
 import { extractAgentPayReady, getAgentPayFilterOptions } from "./services/agentPayService";
-import { getAgentMappings, getVendors } from "./services/vendorService";
+import { getAgentMappings, getVendors, loadAgentLookups } from "./services/vendorService";
 import {
   createDraftInvoices as createDraftInvoicesService,
   getInvoiceTracker,
@@ -81,8 +81,12 @@ type AgentPayReadyRecord = {
 };
 
 type AgentTaggingRecord = {
+  AgentCompanyID?: string;
   Title: string;
   AgentCompanyName: string;
+  BCAgentName?: string;
+  BCVendorCode?: string;
+  EMPAgentCompanyName?: string;
   "BC Agent Name": string;
   "BC Vendor Code": string;
   "Other Remarks": string;
@@ -91,7 +95,9 @@ type AgentTaggingRecord = {
 type VendorRecord = {
   ID: string;
   "NAV ID": string;
+  NAVID?: string;
   "Vendor Name": string;
+  VendorName?: string;
 };
 
 type AgentMappingRow = {
@@ -268,7 +274,7 @@ function GenerateDraftsScreen({
 }: {
   extractedRecords: AgentPayReadyRecord[];
   hasExtracted: boolean;
-  onExtractData: (records: AgentPayReadyRecord[]) => void;
+  onExtractData: (records: AgentPayReadyRecord[]) => Promise<void>;
 }) {
   const [yearFilter, setYearFilter] = useState("All");
   const [termFilter, setTermFilter] = useState("All");
@@ -314,7 +320,7 @@ function GenerateDraftsScreen({
         throw new Error("Agent pay extraction returned an invalid response.");
       }
 
-      onExtractData(rows);
+      await onExtractData(rows);
     } catch (error) {
       setExtractError(error instanceof Error ? error.message : "Agent pay extraction failed.");
     } finally {
@@ -713,7 +719,7 @@ function ActiveScreen({
   isMappingComplete: boolean;
   onAdvanceStatus: (draftName: string) => void;
   onContinueMapping: () => void;
-  onExtractData: (records: AgentPayReadyRecord[]) => void;
+  onExtractData: (records: AgentPayReadyRecord[]) => Promise<void>;
   onGenerateDrafts: (records: AgentPayReadyRecord[]) => void;
   onUpdateVendor: (agentCompanyId: string, selectedNavId: string) => void;
   setActiveScreen: (screen: string) => void;
@@ -785,6 +791,11 @@ function App() {
         .filter((vendor) => vendor["NAV ID"] && vendor["Vendor Name"])
         .map((vendor) => vendor["NAV ID"]),
     );
+    const vendorByName = new Map(
+      vendors
+        .filter((vendor) => vendor["NAV ID"] && vendor["Vendor Name"])
+        .map((vendor) => [vendor["Vendor Name"].trim().toLowerCase(), vendor]),
+    );
 
     return Array.from(
       new Map(
@@ -792,13 +803,18 @@ function App() {
           const agentCompanyId = String(record.AgentCompanyID);
           const tagging = taggingByAgentId.get(agentCompanyId);
           const mappedNavId = tagging?.["BC Vendor Code"] ?? "";
+          const mappedVendorName = tagging?.["BC Agent Name"] ?? "";
+          const vendorByMappedName = vendorByName.get(mappedVendorName.trim().toLowerCase());
+          const selectedNavId = validVendorCodes.has(mappedNavId)
+            ? mappedNavId
+            : vendorByMappedName?.["NAV ID"] ?? "";
 
           return [
             agentCompanyId,
             {
               agentCompanyId,
               originalAgentName: record.OriginalAgentCompanyName || record.AgentCompanyName,
-              selectedNavId: validVendorCodes.has(mappedNavId) ? mappedNavId : "",
+              selectedNavId: validVendorCodes.has(selectedNavId) ? selectedNavId : "",
             },
           ];
         }),
@@ -820,7 +836,8 @@ function App() {
     setActiveScreen(screen);
   };
 
-  const extractData = (records: AgentPayReadyRecord[]) => {
+  const extractData = async (records: AgentPayReadyRecord[]) => {
+    await loadAgentLookups();
     setExtractedRecords(records);
     setAgentMappings(buildAgentMappings(records));
     setSuccessMessage("");

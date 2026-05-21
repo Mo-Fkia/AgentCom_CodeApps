@@ -21,21 +21,17 @@ import {
   totalPayment,
 } from "./rules/commission";
 
-const screens = [
-  "Home",
-  "Generate Drafts",
-  "Agent Mapping",
-  "Invoice Review",
-  "Invoice Tracker",
-  "Upload Invoice",
-  "Send to BC",
-];
-
-const stats = [
-  { label: "Draft invoices", value: "18" },
-  { label: "Pending review", value: "7" },
-  { label: "Mapped agents", value: "126" },
-  { label: "Ready for BC", value: "5" },
+const navigationGroups = [
+  {
+    label: "Generating Drafts",
+    mainScreen: "Generate Drafts",
+    pages: ["Generate Drafts", "Agent Mapping", "Invoice Review"],
+  },
+  {
+    label: "Invoice Tracker",
+    mainScreen: "Invoice Tracker",
+    pages: ["Invoice Tracker", "Upload Invoice", "Send to BC"],
+  },
 ];
 
 const campuses = ["Adelaide", "Brisbane", "Melbourne", "Sydney"];
@@ -252,22 +248,43 @@ function HomeScreen({ setActiveScreen }: { setActiveScreen: (screen: string) => 
         </div>
       </section>
 
-      <SectionHeader title="Commission Summary" eyebrow="Home" />
-      <div className="stats-grid">
-        {stats.map((stat) => (
-          <div key={stat.label} className="stat-card">
-            <p>{stat.label}</p>
-            <strong>{stat.value}</strong>
+      <SectionHeader title="Process Areas" eyebrow="Home" />
+      <div className="process-grid">
+        <section className="process-card">
+          <div>
+            <p className="eyebrow">Workflow</p>
+            <h3>Generating Drafts</h3>
+            <p>
+              Extract SQL data, map agents, review invoice drafts, then generate draft invoices.
+            </p>
           </div>
-        ))}
-      </div>
-      <div className="screen-grid">
-        {screens.slice(1).map((screen) => (
-          <button key={screen} className="screen-card" onClick={() => setActiveScreen(screen)}>
-            <span>{screen}</span>
-            <small>Open the {screen.toLowerCase()} mock screen.</small>
+          <ol>
+            <li>Generate Drafts</li>
+            <li>Agent Mapping</li>
+            <li>Invoice Review</li>
+          </ol>
+          <button className="secondary-button" onClick={() => setActiveScreen("Generate Drafts")}>
+            Open Generate Drafts
           </button>
-        ))}
+        </section>
+        <section className="process-card">
+          <div>
+            <p className="eyebrow">Workflow</p>
+            <h3>Invoice Tracker</h3>
+            <p>
+              Track generated drafts, upload official invoices, and send approved invoices to
+              Business Central.
+            </p>
+          </div>
+          <ol>
+            <li>Invoice Tracker</li>
+            <li>Upload Invoice</li>
+            <li>Send to BC</li>
+          </ol>
+          <button className="secondary-button" onClick={() => setActiveScreen("Invoice Tracker")}>
+            Open Invoice Tracker
+          </button>
+        </section>
       </div>
     </div>
   );
@@ -1402,18 +1419,38 @@ function App() {
           <h1>Agent Commission</h1>
         </div>
         <nav className="sidebar__nav" aria-label="Agent Commission screens">
-          {screens.map((screen) => (
-            <button
-              key={screen}
-              disabled={
-                (screen === "Agent Mapping" && !hasExtracted) ||
-                (screen === "Invoice Review" && !isMappingComplete)
-              }
-              className={activeScreen === screen ? "active" : ""}
-              onClick={() => navigateToScreen(screen)}
-            >
-              {screen}
-            </button>
+          <button
+            className={activeScreen === "Home" ? "active" : ""}
+            onClick={() => navigateToScreen("Home")}
+          >
+            Home
+          </button>
+          {navigationGroups.map((group) => (
+            <div key={group.label} className="sidebar__group">
+              <button
+                className={`sidebar__group-heading ${
+                  activeScreen === group.mainScreen ? "active" : ""
+                }`}
+                onClick={() => navigateToScreen(group.mainScreen)}
+              >
+                {group.label}
+              </button>
+              {group.pages.map((screen, index) => (
+                <button
+                  key={screen}
+                  disabled={
+                    (screen === "Agent Mapping" && !hasExtracted) ||
+                    (screen === "Invoice Review" && !isMappingComplete)
+                  }
+                  className={`${activeScreen === screen ? "active" : ""} ${
+                    index > 0 ? "sidebar__subpage" : ""
+                  }`}
+                  onClick={() => navigateToScreen(screen)}
+                >
+                  {screen}
+                </button>
+              ))}
+            </div>
           ))}
         </nav>
       </aside>

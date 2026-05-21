@@ -16,8 +16,15 @@ export type DraftInvoiceRecord = {
   DraftNm: string;
   AgentName: string;
   AgentCode: string;
+  NAVID: string;
+  Program: string;
   YearTerm: string;
   Campus: string;
+  TotalPayment: number;
+  TotalNonFee: number;
+  BaseAmount: number;
+  CommissionRate: number;
+  CommissionAmount: number;
   TotalCommission: number;
   CurrentStatus: DraftStatus;
   CreatedDate: string;
@@ -32,12 +39,19 @@ const today = () => new Date().toISOString().slice(0, 10);
 const initialTrackerRecords = (getMockInvoiceTracker() as MockInvoiceTrackerRecord[]).map((record) => ({
   AgentCode: record.VendorCode || "-",
   AgentName: record.AgentCompanyName,
+  BaseAmount: record.Amount,
   Campus: record.CampusName,
+  CommissionAmount: record.Amount,
+  CommissionRate: 0,
   CreatedDate: record.LastUpdated,
   CurrentStatus: "New" as DraftStatus,
   DraftInvoiceLink: "#" as const,
   DraftNm: record.InvoiceNumber,
+  NAVID: record.VendorCode || "-",
+  Program: "Mock",
+  TotalNonFee: 0,
   TotalCommission: record.Amount,
+  TotalPayment: record.Amount,
   YearTerm: "Mock",
 }));
 

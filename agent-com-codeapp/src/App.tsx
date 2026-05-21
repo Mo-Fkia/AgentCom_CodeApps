@@ -121,8 +121,15 @@ type DraftInvoiceRecord = {
   DraftNm: string;
   AgentName: string;
   AgentCode: string;
+  NAVID: string;
+  Program: string;
   YearTerm: string;
   Campus: string;
+  TotalPayment: number;
+  TotalNonFee: number;
+  BaseAmount: number;
+  CommissionRate: number;
+  CommissionAmount: number;
   TotalCommission: number;
   CurrentStatus: DraftStatus;
   CreatedDate: string;
@@ -1373,21 +1380,37 @@ function App() {
   };
 
   const generateDraftInvoices = (drafts: InvoiceReviewSummary[]) => {
+    const confirmed = window.confirm(
+      "This will generate draft invoices for all reviewed invoice groups. Continue?",
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
     const createdDate = new Date().toISOString().slice(0, 10);
-    const draftInvoices = drafts.map((draft) => {
-      const draftKey = [draft.yearTerm, draft.navId, draft.campus, draft.program]
+    const draftInvoices = drafts.map((draft, index) => {
+      const agentCode = draft.navId || draft.agentName;
+      const draftKey = [draft.yearTerm, agentCode, String(index + 1).padStart(3, "0")]
         .join("-")
         .replace(/[^a-z0-9-]+/gi, "-")
         .replace(/-+/g, "-");
 
       return {
         DraftInvoiceLink: "#",
-        DraftNm: `DRFT-${draftKey}`,
-        AgentCode: draft.navId,
+        DraftNm: `DRF-${draftKey}`,
+        AgentCode: agentCode,
         AgentName: draft.agentName,
+        BaseAmount: draft.baseAmount,
         Campus: draft.campus,
+        CommissionAmount: draft.commissionAmount,
+        CommissionRate: draft.commissionRate,
         CreatedDate: createdDate,
         CurrentStatus: "New",
+        NAVID: draft.navId,
+        Program: draft.program,
+        TotalNonFee: draft.nonFee,
+        TotalPayment: draft.totalPayment,
         TotalCommission: draft.commissionAmount,
         YearTerm: draft.yearTerm,
       } as DraftInvoiceRecord;

@@ -497,6 +497,119 @@ button {
   white-space: nowrap;
 }
 
+.invoice-summary-table tbody tr {
+  cursor: pointer;
+}
+
+.invoice-summary-table {
+  max-height: 14rem;
+  overflow: auto;
+}
+
+.invoice-summary-table table {
+  min-width: 0;
+  table-layout: fixed;
+}
+
+.invoice-summary-table thead {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+.invoice-summary-table th,
+.invoice-summary-table td {
+  overflow: hidden;
+  padding: 0.55rem 0.65rem;
+  text-overflow: ellipsis;
+}
+
+.invoice-summary-table tbody tr:hover,
+.invoice-summary-table .selected-row {
+  background: #fbf8ef;
+}
+
+.invoice-summary-table .selected-row {
+  box-shadow: inset 4px 0 0 #88774f;
+}
+
+.invoice-summary-table th,
+.invoice-summary-table td,
+.invoice-detail-table th,
+.invoice-detail-table td {
+  white-space: nowrap;
+}
+
+.invoice-summary-table td:nth-child(7),
+.invoice-summary-table td:nth-child(8),
+.invoice-summary-table td:nth-child(9),
+.invoice-summary-table td:nth-child(11),
+.invoice-detail-table td:nth-child(4),
+.invoice-detail-table td:nth-child(5),
+.invoice-detail-table td:nth-child(6),
+.invoice-detail-table td:nth-child(7) {
+  text-align: right;
+}
+
+.invoice-detail-panel {
+  border: 1px solid #dcdcdc;
+  border-top: 2px solid #88774f;
+  background: #ffffff;
+  padding: 1rem;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+.invoice-detail-header {
+  display: grid;
+  grid-template-columns: minmax(14rem, 18rem) minmax(0, 1fr);
+  gap: 1rem;
+  align-items: start;
+}
+
+.invoice-detail-header h3 {
+  margin: 0.25rem 0 0;
+  color: #00205b;
+  font-size: 1.2rem;
+}
+
+.invoice-detail-header dl {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.55rem;
+  margin: 0;
+}
+
+.invoice-detail-header dl div {
+  display: block;
+  min-width: 0;
+  margin: 0;
+  border-left: 3px solid #cfc39d;
+  background: #fbf8ef;
+  padding: 0.55rem 0.65rem;
+}
+
+.invoice-detail-header dd {
+  overflow: hidden;
+  margin-top: 0.2rem;
+  color: #00205b;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.invoice-total-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+
+.invoice-detail-table {
+  margin-top: 1rem;
+  max-height: 20rem;
+  overflow: auto;
+}
+
 table {
   width: 100%;
   min-width: 38.75rem;

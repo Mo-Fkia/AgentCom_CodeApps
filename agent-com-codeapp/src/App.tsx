@@ -18,7 +18,6 @@ import {
   commissionAmount,
   commissionRate,
   nonFee,
-  programCode,
   totalPayment,
 } from "./rules/commission";
 
@@ -70,6 +69,7 @@ type AgentPayReadyRecord = {
   ProgramName: string;
   ProgramCode: string;
   ProgramStage?: string;
+  CourseName?: string;
   StudentName: string;
   EmpID: number;
   StudentID?: number;
@@ -131,6 +131,31 @@ type DraftInvoiceRecord = {
   CurrentStatus: DraftStatus;
   CreatedDate: string;
   DraftInvoiceLink: "#";
+};
+
+type InvoiceReviewDetailLine = {
+  baseAmount: number;
+  commissionAmount: number;
+  course: string;
+  nonFee: number;
+  paymentAmount: number;
+  studentId: string;
+  studentName: string;
+};
+
+type InvoiceReviewSummary = {
+  agentName: string;
+  baseAmount: number;
+  campus: string;
+  commissionAmount: number;
+  commissionRate: number;
+  details: InvoiceReviewDetailLine[];
+  key: string;
+  navId: string;
+  nonFee: number;
+  program: string;
+  totalPayment: number;
+  yearTerm: string;
 };
 
 function StatusBadge({ children }: { children: string }) {
@@ -771,30 +796,75 @@ function AgentMappingScreen({
 }
 
 function InvoiceReviewScreen({
+  agentMappings,
   extractedRecords,
   onGenerateDrafts,
 }: {
+  agentMappings: AgentMappingRow[];
   extractedRecords: AgentPayReadyRecord[];
-  onGenerateDrafts: (records: AgentPayReadyRecord[]) => void;
+  onGenerateDrafts: (drafts: InvoiceReviewSummary[]) => void;
 }) {
-  const invoiceReviewRows = extractedRecords.map((record, index) => ({
-    AgentPayReadyID: record.AgentPayReadyID,
-    cells: [
-      record.OriginalAgentCompanyName || record.AgentCompanyName,
-      record.StudentName.trim() || "-",
-      String(record.StudentID ?? record.EmpID),
-      record.ProgramName,
-      record.CampusName,
-      getYearTerm(record),
-      formatCurrency(totalPayment(record)),
-      formatCurrency(nonFee(record)),
-      formatCurrency(baseAmount(record)),
-      `${commissionRate(record)}%`,
-      formatCurrency(commissionAmount(record)),
-      programCode(record).programCode,
-    ],
-    id: index,
-  }));
+  const mappingByAgentId = new Map(
+    agentMappings.map((mapping) => [mapping.agentCompanyId, mapping]),
+  );
+  const invoiceReviewRows = Array.from(
+    extractedRecords
+      .reduce((groups, record) => {
+        const mapping = mappingByAgentId.get(String(record.AgentCompanyID));
+        const agentName = mapping?.selectedVendorName || record.AgentCompanyName;
+        const navId = mapping?.selectedNavId ?? "";
+        const yearTerm = getYearTerm(record);
+        const groupKey = [agentName, navId, record.ProgramName, record.CampusName, yearTerm].join("|");
+        const commissionRecord = {
+          ...record,
+          AgentCompanyName: agentName,
+        };
+        const recordTotalPayment = totalPayment(commissionRecord);
+        const recordNonFee = nonFee(commissionRecord);
+        const recordBaseAmount = baseAmount(commissionRecord);
+        const recordCommissionAmount = commissionAmount(commissionRecord);
+        const detailLine = {
+          baseAmount: recordBaseAmount,
+          commissionAmount: recordCommissionAmount,
+          course: record.CourseName || record.ProgramStage || "-",
+          nonFee: recordNonFee,
+          paymentAmount: recordTotalPayment,
+          studentId: String(record.StudentID ?? record.EmpID),
+          studentName: record.StudentName.trim() || "-",
+        };
+        const existingGroup = groups.get(groupKey);
+
+        if (existingGroup) {
+          existingGroup.totalPayment += recordTotalPayment;
+          existingGroup.nonFee += recordNonFee;
+          existingGroup.baseAmount = existingGroup.totalPayment - existingGroup.nonFee;
+          existingGroup.commissionAmount += recordCommissionAmount;
+          existingGroup.details.push(detailLine);
+          return groups;
+        }
+
+        groups.set(groupKey, {
+          agentName,
+          baseAmount: recordTotalPayment - recordNonFee,
+          campus: record.CampusName,
+          commissionAmount: recordCommissionAmount,
+          commissionRate: commissionRate(commissionRecord),
+          details: [detailLine],
+          key: groupKey,
+          navId,
+          nonFee: recordNonFee,
+          program: record.ProgramName,
+          totalPayment: recordTotalPayment,
+          yearTerm,
+        });
+
+        return groups;
+      }, new Map<string, InvoiceReviewSummary>())
+      .values(),
+  );
+  const [selectedInvoiceKey, setSelectedInvoiceKey] = useState(invoiceReviewRows[0]?.key ?? "");
+  const selectedInvoice =
+    invoiceReviewRows.find((row) => row.key === selectedInvoiceKey) ?? invoiceReviewRows[0];
 
   return (
     <div className="screen-stack">
@@ -802,25 +872,120 @@ function InvoiceReviewScreen({
         title="Invoice Review"
         eyebrow="Approval queue"
         action="Generate Drafts"
-        onAction={() => onGenerateDrafts(extractedRecords)}
+        onAction={() => onGenerateDrafts(invoiceReviewRows)}
       />
-      <DataTable
-        columns={[
-          "Agent",
-          "Student",
-          "Student ID",
-          "Program",
-          "Campus",
-          "YearTerm",
-          "Total Payment",
-          "Non Fee",
-          "Base Amount",
-          "Commission Rate",
-          "Commission Amount",
-          "Program Code",
-        ]}
-        rows={invoiceReviewRows}
-      />
+      <div className="table-shell invoice-summary-table">
+        <table>
+          <thead>
+            <tr>
+              <th>Agent</th>
+              <th>NAVID</th>
+              <th>Program</th>
+              <th>Campus</th>
+              <th>YearTerm</th>
+              <th>Total Payment</th>
+              <th>Non Fee</th>
+              <th>Base Amount</th>
+              <th>Commission Rate</th>
+              <th>Commission Amount</th>
+            </tr>
+          </thead>
+          <tbody>
+            {invoiceReviewRows.map((row) => (
+              <tr
+                key={row.key}
+                className={selectedInvoice?.key === row.key ? "selected-row" : ""}
+                onClick={() => setSelectedInvoiceKey(row.key)}
+              >
+                <td title={row.agentName}>{row.agentName}</td>
+                <td>{row.navId}</td>
+                <td title={row.program}>{row.program}</td>
+                <td>{row.campus}</td>
+                <td>{row.yearTerm}</td>
+                <td>{formatCurrency(row.totalPayment)}</td>
+                <td>{formatCurrency(row.nonFee)}</td>
+                <td>{formatCurrency(row.baseAmount)}</td>
+                <td>{`${row.commissionRate}%`}</td>
+                <td>{formatCurrency(row.commissionAmount)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {selectedInvoice ? (
+        <section className="invoice-detail-panel">
+          <div className="invoice-detail-header">
+            <div>
+              <p className="eyebrow">Draft invoice detail</p>
+              <h3>{selectedInvoice.agentName}</h3>
+            </div>
+            <dl>
+              <div>
+                <dt>NAVID</dt>
+                <dd>{selectedInvoice.navId}</dd>
+              </div>
+              <div>
+                <dt>Program</dt>
+                <dd title={selectedInvoice.program}>{selectedInvoice.program}</dd>
+              </div>
+              <div>
+                <dt>Campus</dt>
+                <dd>{selectedInvoice.campus}</dd>
+              </div>
+              <div>
+                <dt>YearTerm</dt>
+                <dd>{selectedInvoice.yearTerm}</dd>
+              </div>
+            </dl>
+          </div>
+          <div className="invoice-total-grid">
+            <div className="stat-card">
+              <p>Total Payment</p>
+              <strong>{formatCurrency(selectedInvoice.totalPayment)}</strong>
+            </div>
+            <div className="stat-card">
+              <p>Non Fee</p>
+              <strong>{formatCurrency(selectedInvoice.nonFee)}</strong>
+            </div>
+            <div className="stat-card">
+              <p>Base Amount</p>
+              <strong>{formatCurrency(selectedInvoice.baseAmount)}</strong>
+            </div>
+            <div className="stat-card">
+              <p>Commission Amount</p>
+              <strong>{formatCurrency(selectedInvoice.commissionAmount)}</strong>
+            </div>
+          </div>
+          <div className="table-shell invoice-detail-table">
+            <table>
+              <thead>
+                <tr>
+                  <th>Student ID</th>
+                  <th>Student Name</th>
+                  <th>Course / Program Stage</th>
+                  <th>Payment Amount</th>
+                  <th>Non Fee</th>
+                  <th>Base Amount</th>
+                  <th>Commission Amount</th>
+                </tr>
+              </thead>
+              <tbody>
+                {selectedInvoice.details.map((detail, index) => (
+                  <tr key={`${detail.studentId}-${detail.course}-${index}`}>
+                    <td>{detail.studentId}</td>
+                    <td title={detail.studentName}>{detail.studentName}</td>
+                    <td title={detail.course}>{detail.course}</td>
+                    <td>{formatCurrency(detail.paymentAmount)}</td>
+                    <td>{formatCurrency(detail.nonFee)}</td>
+                    <td>{formatCurrency(detail.baseAmount)}</td>
+                    <td>{formatCurrency(detail.commissionAmount)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      ) : null}
     </div>
   );
 }
@@ -1019,7 +1184,7 @@ function ActiveScreen({
   onAdvanceStatus: (draftName: string) => void;
   onContinueMapping: () => void;
   onExtractData: (records: AgentPayReadyRecord[], filters: GenerateDraftFilters) => Promise<void>;
-  onGenerateDrafts: (records: AgentPayReadyRecord[]) => void;
+  onGenerateDrafts: (drafts: InvoiceReviewSummary[]) => void;
   onRefreshLookups: () => void;
   onUpdateVendor: (
     agentCompanyId: string,
@@ -1064,6 +1229,7 @@ function ActiveScreen({
 
     return (
       <InvoiceReviewScreen
+        agentMappings={agentMappings}
         extractedRecords={extractedRecords}
         onGenerateDrafts={onGenerateDrafts}
       />
@@ -1189,35 +1355,28 @@ function App() {
     );
   };
 
-  const generateDraftInvoices = (records: AgentPayReadyRecord[]) => {
+  const generateDraftInvoices = (drafts: InvoiceReviewSummary[]) => {
     const createdDate = new Date().toISOString().slice(0, 10);
-    const groupedDrafts = new Map<string, DraftInvoiceRecord>();
+    const draftInvoices = drafts.map((draft) => {
+      const draftKey = [draft.yearTerm, draft.navId, draft.campus, draft.program]
+        .join("-")
+        .replace(/[^a-z0-9-]+/gi, "-")
+        .replace(/-+/g, "-");
 
-    records.forEach((record) => {
-      const yearTerm = getYearTerm(record);
-      const agentCode = String(record.AgentCompanyID);
-      const groupKey = `${agentCode}-${yearTerm}-${record.CampusName}`;
-      const existingDraft = groupedDrafts.get(groupKey);
-
-      if (existingDraft) {
-        existingDraft.TotalCommission += commissionAmount(record);
-        return;
-      }
-
-      groupedDrafts.set(groupKey, {
+      return {
         DraftInvoiceLink: "#",
-        DraftNm: `DRFT-${yearTerm}-${agentCode}-${record.CampusName}`,
-        AgentCode: agentCode,
-        AgentName: record.OriginalAgentCompanyName || record.AgentCompanyName,
-        Campus: record.CampusName,
+        DraftNm: `DRFT-${draftKey}`,
+        AgentCode: draft.navId,
+        AgentName: draft.agentName,
+        Campus: draft.campus,
         CreatedDate: createdDate,
         CurrentStatus: "New",
-        TotalCommission: commissionAmount(record),
-        YearTerm: yearTerm,
-      });
+        TotalCommission: draft.commissionAmount,
+        YearTerm: draft.yearTerm,
+      } as DraftInvoiceRecord;
     });
 
-    const nextDraftInvoices = createDraftInvoicesService(Array.from(groupedDrafts.values()));
+    const nextDraftInvoices = createDraftInvoicesService(draftInvoices);
     setTrackerRecords(getInvoiceTracker() as DraftInvoiceRecord[]);
     setSuccessMessage(`${nextDraftInvoices.length} draft invoice records created.`);
     setActiveScreen("Invoice Tracker");

@@ -111,6 +111,14 @@ type AgentMappingRow = {
   selectedVendorName: string;
 };
 
+type GenerateDraftFilters = {
+  campus: string;
+  program: string;
+  seen: SeenFilter;
+  term: string;
+  year: string;
+};
+
 type DraftStatus = "New" | "Sent" | "Uploaded" | "Completed";
 
 type DraftInvoiceRecord = {
@@ -163,7 +171,7 @@ function DataTable({ columns, rows }: DataTableProps) {
             return (
               <tr key={getRowKey(row, rowIndex)}>
                 {cells.map((cell, cellIndex) => (
-                  <td key={`${rowIndex}-${cellIndex}`}>
+                  <td key={`${rowIndex}-${cellIndex}`} title={cell}>
                     {cellIndex === cells.length - 1 ? <StatusBadge>{cell}</StatusBadge> : cell}
                   </td>
                 ))}
@@ -273,13 +281,15 @@ function createInitialTrackerRecords() {
 }
 
 function GenerateDraftsScreen({
+  extractionFilters,
   extractedRecords,
   hasExtracted,
   onExtractData,
 }: {
+  extractionFilters: GenerateDraftFilters | undefined;
   extractedRecords: AgentPayReadyRecord[];
   hasExtracted: boolean;
-  onExtractData: (records: AgentPayReadyRecord[]) => Promise<void>;
+  onExtractData: (records: AgentPayReadyRecord[], filters: GenerateDraftFilters) => Promise<void>;
 }) {
   const [yearFilter, setYearFilter] = useState("All");
   const [termFilter, setTermFilter] = useState("All");
@@ -313,19 +323,20 @@ function GenerateDraftsScreen({
     setIsExtracting(true);
 
     try {
-      const rows = await extractAgentPayReady({
+      const filters = {
         campus: campusFilter,
         program: programFilter,
         seen: seenFilter,
         term: termFilter,
         year: yearFilter,
-      });
+      };
+      const rows = await extractAgentPayReady(filters);
 
       if (!Array.isArray(rows)) {
         throw new Error("Agent pay extraction returned an invalid response.");
       }
 
-      await onExtractData(rows);
+      await onExtractData(rows, filters);
     } catch (error) {
       setExtractError(error instanceof Error ? error.message : "Agent pay extraction failed.");
     } finally {
@@ -337,16 +348,80 @@ function GenerateDraftsScreen({
     extractedRecords.map((record) => record.AgentCompanyID || record.AgentCompanyName),
   ).size;
 
-  const previewRows = extractedRecords.slice(0, 25).map((record, index) => ({
-    AgentPayReadyID: record.AgentPayReadyID,
+  const generatedFromFilters = extractionFilters ?? {
+    campus: campusFilter,
+    program: programFilter,
+    seen: seenFilter,
+    term: termFilter,
+    year: yearFilter,
+  };
+  const statusChipSummary = [
+    ["Year", generatedFromFilters.year],
+    ["Term", generatedFromFilters.term],
+    ["Campus", generatedFromFilters.campus],
+    ["Seen", generatedFromFilters.seen],
+  ];
+  const previewRows = Array.from(
+    extractedRecords
+      .reduce((groupedRows, record) => {
+        const studentId = String(record.StudentID ?? record.EmpID);
+        const studentName = record.StudentName.trim() || "-";
+        const agentId = String(record.AgentCompanyID);
+        const agentName = record.OriginalAgentCompanyName || record.AgentCompanyName;
+        const yearTerm = getYearTerm(record);
+        const groupKey = [
+          studentId,
+          studentName,
+          agentId,
+          agentName,
+          yearTerm,
+          record.CampusName,
+          record.ProgramName,
+        ].join("|");
+        const existingRow = groupedRows.get(groupKey);
+
+        if (existingRow) {
+          existingRow.amount += Number(record.PaymentAmountSubject) || 0;
+          existingRow.seen = existingRow.seen || record.Seen;
+          return groupedRows;
+        }
+
+        groupedRows.set(groupKey, {
+          agentId,
+          agentName,
+          amount: Number(record.PaymentAmountSubject) || 0,
+          campus: record.CampusName,
+          program: record.ProgramName,
+          seen: record.Seen,
+          studentId,
+          studentName,
+          yearTerm,
+        });
+
+        return groupedRows;
+      }, new Map<string, {
+        agentId: string;
+        agentName: string;
+        amount: number;
+        campus: string;
+        program: string;
+        seen: boolean;
+        studentId: string;
+        studentName: string;
+        yearTerm: string;
+      }>())
+      .values(),
+  ).map((row, index) => ({
     cells: [
-      String(record.AgentCompanyID),
-      record.OriginalAgentCompanyName || record.AgentCompanyName,
-      `${record.TermYear} T${record.TermNumber}`,
-      record.CampusName,
-      record.ProgramCode,
-      formatCurrency(record.PaymentAmountSubject),
-      record.Seen ? "Seen" : "Not Seen",
+      row.studentId,
+      row.studentName,
+      row.agentId,
+      row.agentName,
+      row.yearTerm,
+      row.campus,
+      row.program,
+      formatCurrency(row.amount),
+      row.seen ? "Seen" : "Not Seen",
     ],
     id: index,
   }));
@@ -354,58 +429,60 @@ function GenerateDraftsScreen({
   return (
     <div className="screen-stack">
       <SectionHeader title="Generate Drafts" eyebrow="Draft generation" />
-      <div className="split-grid">
-        <aside className="side-panel">
+      <div className="generate-panel-grid">
+        <aside className="side-panel generate-filters">
           <h3>Filters</h3>
-          <label>
-            Year
-            <select value={yearFilter} onChange={(event) => setYearFilter(event.target.value)}>
-              <option>All</option>
-              {yearOptions.map((year) => (
-                <option key={year}>{year}</option>
-              ))}
-            </select>
-          </label>
-          <label>
-            Term
-            <select value={termFilter} onChange={(event) => setTermFilter(event.target.value)}>
-              <option>All</option>
-              {termOptions.map((term) => (
-                <option key={term}>{term}</option>
-              ))}
-            </select>
-          </label>
-          <label>
-            Campus
-            <select value={campusFilter} onChange={(event) => setCampusFilter(event.target.value)}>
-              <option>All</option>
-              {campusOptions.map((campus) => (
-                <option key={campus}>{campus}</option>
-              ))}
-            </select>
-          </label>
-          <label>
-            Program
-            <select
-              value={programFilter}
-              onChange={(event) => setProgramFilter(event.target.value)}
-            >
-              {programOptions.map((program) => (
-                <option key={program}>{program}</option>
-              ))}
-            </select>
-          </label>
-          <label>
-            Seen status
-            <select
-              value={seenFilter}
-              onChange={(event) => setSeenFilter(event.target.value as SeenFilter)}
-            >
-              <option>All</option>
-              <option>Seen</option>
-              <option>Not Seen</option>
-            </select>
-          </label>
+          <div className="filter-grid">
+            <label>
+              Year
+              <select value={yearFilter} onChange={(event) => setYearFilter(event.target.value)}>
+                <option>All</option>
+                {yearOptions.map((year) => (
+                  <option key={year}>{year}</option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Term
+              <select value={termFilter} onChange={(event) => setTermFilter(event.target.value)}>
+                <option>All</option>
+                {termOptions.map((term) => (
+                  <option key={term}>{term}</option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Campus
+              <select value={campusFilter} onChange={(event) => setCampusFilter(event.target.value)}>
+                <option>All</option>
+                {campusOptions.map((campus) => (
+                  <option key={campus}>{campus}</option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Seen status
+              <select
+                value={seenFilter}
+                onChange={(event) => setSeenFilter(event.target.value as SeenFilter)}
+              >
+                <option>All</option>
+                <option>Seen</option>
+                <option>Not Seen</option>
+              </select>
+            </label>
+            <label className="filter-grid__wide">
+              Program
+              <select
+                value={programFilter}
+                onChange={(event) => setProgramFilter(event.target.value)}
+              >
+                {programOptions.map((program) => (
+                  <option key={program}>{program}</option>
+                ))}
+              </select>
+            </label>
+          </div>
           <button
             className="secondary-button side-panel-button"
             disabled={isExtracting}
@@ -415,10 +492,26 @@ function GenerateDraftsScreen({
           </button>
           {extractError ? <div className="error-message">{extractError}</div> : null}
         </aside>
-        <div className="empty-state">
-          {hasExtracted
-            ? "Extracted data is ready for review."
-            : "Select filters and extract data to begin draft generation."}
+        <div className="draft-guidance-panel">
+          <p className="eyebrow">Status</p>
+          <h3>{hasExtracted ? "Ready for review" : "No data extracted yet"}</h3>
+          <p>
+            {hasExtracted
+              ? "Generated from these filters. Review the extracted records below, then continue to Agent Mapping."
+              : "Choose the filters for the term, campus, program, and seen status, then extract data."}
+          </p>
+          <dl className="filter-summary">
+            {statusChipSummary.map(([label, value]) => (
+              <div key={label}>
+                <dt>{label}</dt>
+                <dd title={value}>{value}</dd>
+              </div>
+            ))}
+            <div className="filter-summary__program">
+              <dt>Program</dt>
+              <dd title={generatedFromFilters.program}>{generatedFromFilters.program}</dd>
+            </div>
+          </dl>
         </div>
       </div>
       {hasExtracted ? (
@@ -433,10 +526,22 @@ function GenerateDraftsScreen({
               <strong>{distinctAgentCount}</strong>
             </div>
           </div>
-          <DataTable
-            columns={["Agent ID", "Agent", "Term", "Campus", "Program", "Amount", "Seen"]}
-            rows={previewRows}
-          />
+          <div className="preview-table-scroll">
+            <DataTable
+              columns={[
+                "Student ID",
+                "Student Name",
+                "Agent ID",
+                "Agent Name",
+                "YearTerm",
+                "Campus",
+                "Program",
+                "Amount",
+                "Seen",
+              ]}
+              rows={previewRows}
+            />
+          </div>
         </>
       ) : null}
     </div>
@@ -886,6 +991,7 @@ function buildAgentMappingsFromLookups(
 function ActiveScreen({
   agentMappings,
   activeScreen,
+  extractionFilters,
   extractedRecords,
   hasExtracted,
   isLookupLoading,
@@ -904,6 +1010,7 @@ function ActiveScreen({
 }: {
   agentMappings: AgentMappingRow[];
   activeScreen: string;
+  extractionFilters: GenerateDraftFilters | undefined;
   extractedRecords: AgentPayReadyRecord[];
   hasExtracted: boolean;
   isLookupLoading: boolean;
@@ -911,7 +1018,7 @@ function ActiveScreen({
   lookupError: string;
   onAdvanceStatus: (draftName: string) => void;
   onContinueMapping: () => void;
-  onExtractData: (records: AgentPayReadyRecord[]) => Promise<void>;
+  onExtractData: (records: AgentPayReadyRecord[], filters: GenerateDraftFilters) => Promise<void>;
   onGenerateDrafts: (records: AgentPayReadyRecord[]) => void;
   onRefreshLookups: () => void;
   onUpdateVendor: (
@@ -928,6 +1035,7 @@ function ActiveScreen({
   if (activeScreen === "Generate Drafts") {
     return (
       <GenerateDraftsScreen
+        extractionFilters={extractionFilters}
         extractedRecords={extractedRecords}
         hasExtracted={hasExtracted}
         onExtractData={onExtractData}
@@ -977,6 +1085,7 @@ function ActiveScreen({
 function App() {
   const [activeScreen, setActiveScreen] = useState("Home");
   const [extractedRecords, setExtractedRecords] = useState<AgentPayReadyRecord[]>([]);
+  const [extractionFilters, setExtractionFilters] = useState<GenerateDraftFilters>();
   const [agentMappings, setAgentMappings] = useState<AgentMappingRow[]>([]);
   const [trackerRecords, setTrackerRecords] = useState<DraftInvoiceRecord[]>(createInitialTrackerRecords);
   const [lookupData, setLookupData] = useState<AgentLookupResponse | undefined>(() =>
@@ -1058,9 +1167,10 @@ function App() {
     }
   };
 
-  const extractData = async (records: AgentPayReadyRecord[]) => {
+  const extractData = async (records: AgentPayReadyRecord[], filters: GenerateDraftFilters) => {
     extractedRecordsRef.current = records;
     setExtractedRecords(records);
+    setExtractionFilters(filters);
     setAgentMappings(buildAgentMappingsFromLookups(records, lookupData));
     setSuccessMessage("");
   };
@@ -1161,6 +1271,7 @@ function App() {
           <ActiveScreen
             agentMappings={agentMappings}
             activeScreen={activeScreen}
+            extractionFilters={extractionFilters}
             extractedRecords={extractedRecords}
             hasExtracted={hasExtracted}
             isLookupLoading={isLookupLoading}

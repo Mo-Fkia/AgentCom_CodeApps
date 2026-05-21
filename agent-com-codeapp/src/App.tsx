@@ -1,9 +1,13 @@
-import { useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import "./App.css";
 import logoUrl from "./assets/brand/lcb-australia-logo.png";
 import studentUrl from "./assets/brand/lcb-australia-student.png";
 import { extractAgentPayReady, getAgentPayFilterOptions } from "./services/agentPayService";
-import { getAgentMappings, getVendors, loadAgentLookups } from "./services/vendorService";
+import {
+  getCachedAgentLookups,
+  loadAgentLookups,
+  type AgentLookupResponse,
+} from "./services/vendorService";
 import {
   createDraftInvoices as createDraftInvoicesService,
   getInvoiceTracker,
@@ -104,6 +108,7 @@ type AgentMappingRow = {
   agentCompanyId: string;
   originalAgentName: string;
   selectedNavId: string;
+  selectedVendorName: string;
 };
 
 type DraftStatus = "New" | "Sent" | "Uploaded" | "Completed";
@@ -253,7 +258,7 @@ function getYearTerm(record: AgentPayReadyRecord) {
 }
 
 function isMappedAgent(mapping: AgentMappingRow) {
-  return Boolean(mapping.selectedNavId);
+  return Boolean(mapping.selectedNavId && mapping.selectedVendorName);
 }
 
 function nextDraftStatus(status: DraftStatus) {
@@ -440,89 +445,222 @@ function GenerateDraftsScreen({
 
 function AgentMappingScreen({
   agentMappings,
+  isLookupLoading,
+  lookupError,
   onContinue,
+  onRefreshLookups,
   onUpdateVendor,
+  vendors,
 }: {
   agentMappings: AgentMappingRow[];
+  isLookupLoading: boolean;
+  lookupError: string;
   onContinue: () => void;
-  onUpdateVendor: (agentCompanyId: string, selectedNavId: string) => void;
+  onRefreshLookups: () => void;
+  onUpdateVendor: (agentCompanyId: string, selectedNavId: string, selectedVendorName: string) => void;
+  vendors: VendorRecord[];
 }) {
-  const vendors = getVendors() as VendorRecord[];
-  const vendorsByNavId = new Map(
-    vendors
-      .filter((vendor) => vendor["NAV ID"] && vendor["Vendor Name"])
-      .map((vendor) => [vendor["NAV ID"], vendor]),
+  const [mappingFilter, setMappingFilter] = useState("All");
+  const [vendorSearchByAgentId, setVendorSearchByAgentId] = useState<Record<string, string>>({});
+  const [activeVendorAgentId, setActiveVendorAgentId] = useState("");
+  const vendorOptions = useMemo(
+    () =>
+      vendors
+        .filter((vendor) => (vendor.NAVID || vendor["NAV ID"]) && (vendor.VendorName || vendor["Vendor Name"]))
+        .sort((a, b) =>
+          (a.VendorName || a["Vendor Name"]).localeCompare(b.VendorName || b["Vendor Name"]),
+        ),
+    [vendors],
   );
-  const vendorOptions = vendors
-    .filter((vendor) => vendor["NAV ID"] && vendor["Vendor Name"])
-    .sort((a, b) => a["Vendor Name"].localeCompare(b["Vendor Name"]));
-  const allAgentsMapped = agentMappings.every((mapping) => {
-    const vendor = vendorsByNavId.get(mapping.selectedNavId);
-    return Boolean(vendor?.["Vendor Name"] && vendor["NAV ID"]);
-  });
+  const getIsMatched = (mapping: AgentMappingRow) =>
+    Boolean(mapping.selectedVendorName && mapping.selectedNavId);
+  const allAgentsMapped = useMemo(
+    () => agentMappings.length > 0 && agentMappings.every(getIsMatched),
+    [agentMappings],
+  );
+  const matchedAgentCount = useMemo(
+    () => agentMappings.filter(getIsMatched).length,
+    [agentMappings],
+  );
+  const visibleAgentMappings = useMemo(
+    () =>
+      agentMappings.filter((mapping) => {
+        const isMatched = getIsMatched(mapping);
+
+        return (
+          mappingFilter === "All" ||
+          (mappingFilter === "Matched" && isMatched) ||
+          (mappingFilter === "Unmatched" && !isMatched)
+        );
+      }),
+    [agentMappings, mappingFilter],
+  );
+  const vendorsByName = useMemo(
+    () =>
+      new Map(
+        vendorOptions.map((vendor) => [
+          (vendor.VendorName || vendor["Vendor Name"]).trim().toLowerCase(),
+          vendor,
+        ]),
+      ),
+    [vendorOptions],
+  );
+  const updateVendorSearch = (agentCompanyId: string, value: string) => {
+    setVendorSearchByAgentId((currentSearch) => ({
+      ...currentSearch,
+      [agentCompanyId]: value,
+    }));
+  };
+  const getVendorName = (vendor: VendorRecord) => vendor.VendorName || vendor["Vendor Name"];
+  const getVendorNavId = (vendor: VendorRecord) => vendor.NAVID || vendor["NAV ID"];
+  const getComboboxVendors = (agentCompanyId: string) => {
+    const searchValue = (vendorSearchByAgentId[agentCompanyId] ?? "").trim().toLowerCase();
+
+    if (!searchValue) {
+      return vendorOptions;
+    }
+
+    return vendorOptions.filter((vendor) => getVendorName(vendor).toLowerCase().includes(searchValue));
+  };
+  const selectVendorByName = (mapping: AgentMappingRow, selectedVendorName: string) => {
+    const vendorName = selectedVendorName.trim();
+    updateVendorSearch(mapping.agentCompanyId, selectedVendorName);
+
+    if (!vendorName) {
+      onUpdateVendor(mapping.agentCompanyId, "", "");
+      return;
+    }
+
+    const selectedVendor = vendorsByName.get(vendorName.toLowerCase());
+
+    if (!selectedVendor) {
+      return;
+    }
+
+    onUpdateVendor(
+      mapping.agentCompanyId,
+      getVendorNavId(selectedVendor),
+      getVendorName(selectedVendor),
+    );
+    setActiveVendorAgentId("");
+  };
+
+  if (isLookupLoading) {
+    return (
+      <div className="screen-stack">
+        <SectionHeader title="Agent Mapping" eyebrow="Agent setup" />
+        <div className="mapping-toolbar">
+          <div>
+            <p>Agents to map</p>
+            <strong>{agentMappings.length}</strong>
+          </div>
+          <div>
+            <p>Mapped agents</p>
+            <strong>{matchedAgentCount}</strong>
+          </div>
+          <button className="secondary-button" disabled>
+            Refreshing...
+          </button>
+          <button className="secondary-button" disabled>
+            Continue
+          </button>
+        </div>
+        <div className="empty-state">
+          Vendor and agent mapping data is still loading. Please wait...
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="screen-stack">
       <SectionHeader title="Agent Mapping" eyebrow="Agent setup" />
       <div className="mapping-toolbar">
-        <div>
+        <div className="mapping-metric">
           <p>Agents to map</p>
           <strong>{agentMappings.length}</strong>
         </div>
-        <div>
+        <div className="mapping-metric">
           <p>Mapped agents</p>
-          <strong>{agentMappings.filter(isMappedAgent).length}</strong>
+          <strong>{matchedAgentCount}</strong>
         </div>
-        <button className="secondary-button" disabled={!allAgentsMapped} onClick={onContinue}>
-          Continue
-        </button>
+        <label className="mapping-filter">
+          Mapping filter
+          <select value={mappingFilter} onChange={(event) => setMappingFilter(event.target.value)}>
+            <option>All</option>
+            <option>Matched</option>
+            <option>Unmatched</option>
+          </select>
+        </label>
+        <div className="mapping-actions">
+          <button className="secondary-button" disabled={isLookupLoading} onClick={onRefreshLookups}>
+            {isLookupLoading ? "Refreshing..." : "Refresh lookups"}
+          </button>
+          <button className="secondary-button" disabled={!allAgentsMapped} onClick={onContinue}>
+            Continue
+          </button>
+        </div>
       </div>
-      <div className="table-shell">
-        <table>
-          <thead>
-            <tr>
-              <th>Agent ID</th>
-              <th>Original Agent Name</th>
-              <th>Selected Vendor Name</th>
-              <th>NAVID / vendor code</th>
-              <th>Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            {agentMappings.map((mapping) => {
-              const selectedVendor = vendorsByNavId.get(mapping.selectedNavId);
-              const isMapped = Boolean(selectedVendor?.["Vendor Name"] && selectedVendor["NAV ID"]);
+      {lookupError ? <div className="error-message">{lookupError}</div> : null}
+      {visibleAgentMappings.length > 0 ? (
+        <div className="mapping-list" aria-label="Agent mappings">
+          {visibleAgentMappings.map((mapping) => {
+            const isMapped = getIsMatched(mapping);
+            const searchValue =
+              vendorSearchByAgentId[mapping.agentCompanyId] ?? mapping.selectedVendorName;
+            const comboboxVendors = getComboboxVendors(mapping.agentCompanyId);
 
-              return (
-                <tr key={mapping.agentCompanyId}>
-                  <td>{mapping.agentCompanyId}</td>
-                  <td>{mapping.originalAgentName}</td>
-                  <td>
-                    <select
-                      aria-label={`Vendor for ${mapping.originalAgentName}`}
-                      value={mapping.selectedNavId}
-                      onChange={(event) =>
-                        onUpdateVendor(mapping.agentCompanyId, event.target.value)
-                      }
-                    >
-                      <option value="">Select vendor</option>
-                      {vendorOptions.map((vendor) => (
-                        <option key={`${vendor.ID}-${vendor["NAV ID"]}`} value={vendor["NAV ID"]}>
-                          {vendor["Vendor Name"]}
-                        </option>
-                      ))}
-                    </select>
-                  </td>
-                  <td>{selectedVendor?.["NAV ID"] ?? ""}</td>
-                  <td>
-                    <StatusBadge>{isMapped ? "Matched" : "Needs mapping"}</StatusBadge>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
+            return (
+              <div
+                key={mapping.agentCompanyId}
+                className={`mapping-row ${isMapped ? "mapping-row--matched" : "mapping-row--unmatched"}`}
+              >
+                <div className="mapping-row__main">
+                  <span className="mapping-row__id">{mapping.agentCompanyId}</span>
+                  <strong>{mapping.originalAgentName}</strong>
+                  <StatusBadge>{isMapped ? "Matched" : "Needs mapping"}</StatusBadge>
+                </div>
+                <div className="mapping-row__detail">
+                  <div className="vendor-combobox">
+                    <input
+                      aria-label={`Search vendor for ${mapping.originalAgentName}`}
+                      placeholder="Search vendor name"
+                      value={searchValue}
+                      onBlur={() => {
+                        window.setTimeout(() => setActiveVendorAgentId(""), 150);
+                      }}
+                      onChange={(event) => selectVendorByName(mapping, event.target.value)}
+                      onFocus={() => setActiveVendorAgentId(mapping.agentCompanyId)}
+                    />
+                    {activeVendorAgentId === mapping.agentCompanyId ? (
+                      <div className="vendor-combobox__options">
+                        {comboboxVendors.map((vendor) => (
+                          <button
+                            key={`${vendor.ID}-${getVendorNavId(vendor)}`}
+                            type="button"
+                            onMouseDown={(event) => {
+                              event.preventDefault();
+                              selectVendorByName(mapping, getVendorName(vendor));
+                            }}
+                          >
+                            {getVendorName(vendor)}
+                          </button>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+                  <div className="mapping-row__navid">
+                    <span>NAVID / vendor code</span>
+                    <strong>{mapping.selectedNavId || "-"}</strong>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="empty-state">No agents match the selected mapping filter.</div>
+      )}
     </div>
   );
 }
@@ -697,34 +835,94 @@ function SendToBcScreen() {
   );
 }
 
+function buildAgentMappingsFromLookups(
+  records: AgentPayReadyRecord[],
+  lookups: AgentLookupResponse | undefined,
+) {
+  const agentTagging = (lookups?.agentTagging ?? []) as AgentTaggingRecord[];
+  const vendors = (lookups?.vendors ?? []) as VendorRecord[];
+  const taggingByAgentId = new Map(agentTagging.map((record) => [record.Title, record]));
+  const validVendorCodes = new Set(
+    vendors
+      .filter((vendor) => vendor["NAV ID"] && vendor["Vendor Name"])
+      .map((vendor) => vendor["NAV ID"]),
+  );
+  const vendorByName = new Map(
+    vendors
+      .filter((vendor) => vendor["NAV ID"] && vendor["Vendor Name"])
+      .map((vendor) => [vendor["Vendor Name"].trim().toLowerCase(), vendor]),
+  );
+
+  return Array.from(
+    new Map(
+      records.map((record) => {
+        const agentCompanyId = String(record.AgentCompanyID);
+        const tagging = taggingByAgentId.get(agentCompanyId);
+        const mappedNavId = tagging?.["BC Vendor Code"] ?? "";
+        const mappedVendorName = tagging?.["BC Agent Name"] ?? "";
+        const vendorByMappedName = vendorByName.get(mappedVendorName.trim().toLowerCase());
+        const selectedNavId = validVendorCodes.has(mappedNavId)
+          ? mappedNavId
+          : vendorByMappedName?.["NAV ID"] ?? "";
+        const selectedVendor = vendors.find((vendor) => vendor["NAV ID"] === selectedNavId);
+
+        return [
+          agentCompanyId,
+          {
+            agentCompanyId,
+            originalAgentName: record.OriginalAgentCompanyName || record.AgentCompanyName,
+            selectedNavId: validVendorCodes.has(selectedNavId) ? selectedNavId : "",
+            selectedVendorName:
+              validVendorCodes.has(selectedNavId) && selectedVendor
+                ? selectedVendor["Vendor Name"]
+                : "",
+          },
+        ];
+      }),
+    ).values(),
+  );
+}
+
 function ActiveScreen({
   agentMappings,
   activeScreen,
   extractedRecords,
   hasExtracted,
+  isLookupLoading,
   isMappingComplete,
+  lookupError,
   onAdvanceStatus,
   onContinueMapping,
   onExtractData,
   onGenerateDrafts,
+  onRefreshLookups,
   onUpdateVendor,
   setActiveScreen,
   successMessage,
   trackerRecords,
+  vendors,
 }: {
   agentMappings: AgentMappingRow[];
   activeScreen: string;
   extractedRecords: AgentPayReadyRecord[];
   hasExtracted: boolean;
+  isLookupLoading: boolean;
   isMappingComplete: boolean;
+  lookupError: string;
   onAdvanceStatus: (draftName: string) => void;
   onContinueMapping: () => void;
   onExtractData: (records: AgentPayReadyRecord[]) => Promise<void>;
   onGenerateDrafts: (records: AgentPayReadyRecord[]) => void;
-  onUpdateVendor: (agentCompanyId: string, selectedNavId: string) => void;
+  onRefreshLookups: () => void;
+  onUpdateVendor: (
+    agentCompanyId: string,
+    selectedNavId: string,
+    selectedVendorName: string,
+  ) => void;
   setActiveScreen: (screen: string) => void;
   successMessage: string;
   trackerRecords: DraftInvoiceRecord[];
+  vendors: VendorRecord[];
 }) {
   if (activeScreen === "Home") return <HomeScreen setActiveScreen={setActiveScreen} />;
   if (activeScreen === "Generate Drafts") {
@@ -742,8 +940,12 @@ function ActiveScreen({
     return (
       <AgentMappingScreen
         agentMappings={agentMappings}
+        isLookupLoading={isLookupLoading}
+        lookupError={lookupError}
         onContinue={onContinueMapping}
+        onRefreshLookups={onRefreshLookups}
         onUpdateVendor={onUpdateVendor}
+        vendors={vendors}
       />
     );
   }
@@ -777,50 +979,49 @@ function App() {
   const [extractedRecords, setExtractedRecords] = useState<AgentPayReadyRecord[]>([]);
   const [agentMappings, setAgentMappings] = useState<AgentMappingRow[]>([]);
   const [trackerRecords, setTrackerRecords] = useState<DraftInvoiceRecord[]>(createInitialTrackerRecords);
+  const [lookupData, setLookupData] = useState<AgentLookupResponse | undefined>(() =>
+    getCachedAgentLookups(),
+  );
+  const [isLookupLoading, setIsLookupLoading] = useState(() => !getCachedAgentLookups());
+  const [lookupError, setLookupError] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
+  const extractedRecordsRef = useRef<AgentPayReadyRecord[]>([]);
   const hasExtracted = extractedRecords.length > 0;
   const isMappingComplete =
     hasExtracted && agentMappings.length > 0 && agentMappings.every(isMappedAgent);
 
-  const buildAgentMappings = (records: AgentPayReadyRecord[]) => {
-    const agentTagging = getAgentMappings() as AgentTaggingRecord[];
-    const vendors = getVendors() as VendorRecord[];
-    const taggingByAgentId = new Map(agentTagging.map((record) => [record.Title, record]));
-    const validVendorCodes = new Set(
-      vendors
-        .filter((vendor) => vendor["NAV ID"] && vendor["Vendor Name"])
-        .map((vendor) => vendor["NAV ID"]),
-    );
-    const vendorByName = new Map(
-      vendors
-        .filter((vendor) => vendor["NAV ID"] && vendor["Vendor Name"])
-        .map((vendor) => [vendor["Vendor Name"].trim().toLowerCase(), vendor]),
-    );
+  useEffect(() => {
+    let isMounted = true;
+    const cachedLookups = getCachedAgentLookups();
 
-    return Array.from(
-      new Map(
-        records.map((record) => {
-          const agentCompanyId = String(record.AgentCompanyID);
-          const tagging = taggingByAgentId.get(agentCompanyId);
-          const mappedNavId = tagging?.["BC Vendor Code"] ?? "";
-          const mappedVendorName = tagging?.["BC Agent Name"] ?? "";
-          const vendorByMappedName = vendorByName.get(mappedVendorName.trim().toLowerCase());
-          const selectedNavId = validVendorCodes.has(mappedNavId)
-            ? mappedNavId
-            : vendorByMappedName?.["NAV ID"] ?? "";
+    async function loadStartupLookups() {
+      try {
+        const lookups = await loadAgentLookups({ forceRefresh: Boolean(cachedLookups) });
 
-          return [
-            agentCompanyId,
-            {
-              agentCompanyId,
-              originalAgentName: record.OriginalAgentCompanyName || record.AgentCompanyName,
-              selectedNavId: validVendorCodes.has(selectedNavId) ? selectedNavId : "",
-            },
-          ];
-        }),
-      ).values(),
-    );
-  };
+        if (isMounted) {
+          setLookupData(lookups);
+          if (extractedRecordsRef.current.length > 0) {
+            setAgentMappings(buildAgentMappingsFromLookups(extractedRecordsRef.current, lookups));
+          }
+          setLookupError("");
+        }
+      } catch (error) {
+        if (isMounted) {
+          setLookupError(error instanceof Error ? error.message : "Vendor lookup loading failed.");
+        }
+      } finally {
+        if (isMounted) {
+          setIsLookupLoading(false);
+        }
+      }
+    }
+
+    void loadStartupLookups();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const navigateToScreen = (screen: string) => {
     if (screen === "Agent Mapping" && !hasExtracted) {
@@ -836,17 +1037,44 @@ function App() {
     setActiveScreen(screen);
   };
 
+  const refreshLookups = async ({ background = false } = {}) => {
+    if (!background) {
+      setIsLookupLoading(true);
+    }
+
+    setLookupError("");
+
+    try {
+      const lookups = await loadAgentLookups({ forceRefresh: true });
+      setLookupData(lookups);
+
+      if (extractedRecords.length > 0) {
+        setAgentMappings(buildAgentMappingsFromLookups(extractedRecords, lookups));
+      }
+    } catch (error) {
+      setLookupError(error instanceof Error ? error.message : "Vendor lookup loading failed.");
+    } finally {
+      setIsLookupLoading(false);
+    }
+  };
+
   const extractData = async (records: AgentPayReadyRecord[]) => {
-    await loadAgentLookups();
+    extractedRecordsRef.current = records;
     setExtractedRecords(records);
-    setAgentMappings(buildAgentMappings(records));
+    setAgentMappings(buildAgentMappingsFromLookups(records, lookupData));
     setSuccessMessage("");
   };
 
-  const updateVendor = (agentCompanyId: string, selectedNavId: string) => {
+  const updateVendor = (
+    agentCompanyId: string,
+    selectedNavId: string,
+    selectedVendorName: string,
+  ) => {
     setAgentMappings((currentMappings) =>
       currentMappings.map((mapping) =>
-        mapping.agentCompanyId === agentCompanyId ? { ...mapping, selectedNavId } : mapping,
+        mapping.agentCompanyId === agentCompanyId
+          ? { ...mapping, selectedNavId, selectedVendorName }
+          : mapping,
       ),
     );
   };
@@ -935,15 +1163,19 @@ function App() {
             activeScreen={activeScreen}
             extractedRecords={extractedRecords}
             hasExtracted={hasExtracted}
+            isLookupLoading={isLookupLoading}
             isMappingComplete={isMappingComplete}
+            lookupError={lookupError}
             onAdvanceStatus={advanceStatus}
             onContinueMapping={() => setActiveScreen("Invoice Review")}
             onExtractData={extractData}
             onGenerateDrafts={generateDraftInvoices}
+            onRefreshLookups={() => void refreshLookups()}
             onUpdateVendor={updateVendor}
             setActiveScreen={navigateToScreen}
             successMessage={successMessage}
             trackerRecords={trackerRecords}
+            vendors={lookupData?.vendors ?? []}
           />
         </div>
       </section>

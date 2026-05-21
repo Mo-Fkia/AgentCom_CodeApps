@@ -30,7 +30,7 @@ export type AgentMappingRecord = {
   field_4?: string;
 };
 
-type AgentLookupResponse = {
+export type AgentLookupResponse = {
   agentTagging: AgentMappingRecord[];
   vendors: VendorRecord[];
 };
@@ -42,7 +42,14 @@ type RawAgentLookupResponse = {
 
 const dataMode = (import.meta.env.VITE_DATA_MODE ?? "mock") as DataMode;
 const agentLookupsUrl = import.meta.env.VITE_AGENT_LOOKUPS_URL;
+const agentLookupsCacheKey = `agent-commission-lookups-${dataMode}`;
+const agentLookupsCacheMaxAgeMs = 8 * 60 * 60 * 1000;
 let cachedAgentLookups: AgentLookupResponse | undefined;
+
+type AgentLookupCache = {
+  data: AgentLookupResponse;
+  timestamp: number;
+};
 
 function asString(value: unknown) {
   return value === null || value === undefined ? "" : String(value);
@@ -117,6 +124,60 @@ function normalizeAgentLookups(lookups: AgentLookupResponse) {
   };
 }
 
+function readLookupCache() {
+  if (typeof localStorage === "undefined") {
+    return undefined;
+  }
+
+  const cachedValue = localStorage.getItem(agentLookupsCacheKey);
+
+  if (!cachedValue) {
+    return undefined;
+  }
+
+  try {
+    const cache = JSON.parse(cachedValue) as AgentLookupCache;
+
+    if (!cache?.timestamp || !cache.data) {
+      return undefined;
+    }
+
+    return {
+      data: normalizeAgentLookups(cache.data),
+      timestamp: cache.timestamp,
+    };
+  } catch {
+    localStorage.removeItem(agentLookupsCacheKey);
+    return undefined;
+  }
+}
+
+function writeLookupCache(data: AgentLookupResponse) {
+  if (typeof localStorage === "undefined") {
+    return;
+  }
+
+  localStorage.setItem(
+    agentLookupsCacheKey,
+    JSON.stringify({
+      data,
+      timestamp: Date.now(),
+    }),
+  );
+}
+
+export function getCachedAgentLookups() {
+  const cache = readLookupCache();
+
+  if (!cache || Date.now() - cache.timestamp > agentLookupsCacheMaxAgeMs) {
+    return undefined;
+  }
+
+  cachedAgentLookups = cache.data;
+
+  return cache.data;
+}
+
 async function fetchAgentLookupsReal() {
   if (!agentLookupsUrl) {
     throw new Error("VITE_AGENT_LOOKUPS_URL is not configured.");
@@ -150,19 +211,25 @@ async function fetchAgentLookupsReal() {
   });
 }
 
-export async function loadAgentLookups() {
+export async function loadAgentLookups({ forceRefresh = false } = {}) {
   if (dataMode === "mock") {
     cachedAgentLookups = normalizeAgentLookups({
       agentTagging: getAgentTagging() as AgentMappingRecord[],
       vendors: getMockVendors() as VendorRecord[],
     });
+    writeLookupCache(cachedAgentLookups);
 
     return cachedAgentLookups;
   }
 
-  if (!cachedAgentLookups) {
-    cachedAgentLookups = await fetchAgentLookupsReal();
+  const cachedLookups = forceRefresh ? undefined : getCachedAgentLookups();
+
+  if (cachedLookups) {
+    return cachedLookups;
   }
+
+  cachedAgentLookups = await fetchAgentLookupsReal();
+  writeLookupCache(cachedAgentLookups);
 
   return cachedAgentLookups;
 }

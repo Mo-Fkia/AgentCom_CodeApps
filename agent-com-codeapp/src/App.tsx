@@ -227,7 +227,7 @@ function HomeScreen({ setActiveScreen }: { setActiveScreen: (screen: string) => 
         </div>
       </section>
 
-      <SectionHeader title="Commission Summary" eyebrow="Home" action="Refresh mock data" />
+      <SectionHeader title="Commission Summary" eyebrow="Home" />
       <div className="stats-grid">
         {stats.map((stat) => (
           <div key={stat.label} className="stat-card">

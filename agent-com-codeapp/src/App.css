@@ -827,6 +827,40 @@ td {
   border-left: 3px solid #88774f;
 }
 
+.tracker-filters {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.75rem;
+  border: 1px solid #dcdcdc;
+  border-top: 2px solid #88774f;
+  background: #ffffff;
+  padding: 0.85rem;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+.tracker-filters label {
+  color: #4f4f4f;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.tracker-filters input {
+  display: block;
+  width: 100%;
+  min-height: 2.5rem;
+  margin-top: 0.45rem;
+  border: 1px solid #c8c8c8;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #222222;
+  padding: 0 0.75rem;
+  font: inherit;
+}
+
+.tracker-table-shell table {
+  min-width: 78rem;
+}
+
 .split-grid--upload {
   grid-template-columns: minmax(0, 1fr) 20rem;
 }
@@ -1050,6 +1084,10 @@ dd {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .tracker-filters {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .mapping-actions {
     justify-content: flex-start;
   }
@@ -1093,6 +1131,10 @@ dd {
   }
 
   .mapping-toolbar {
+    grid-template-columns: 1fr;
+  }
+
+  .tracker-filters {
     grid-template-columns: 1fr;
   }
 

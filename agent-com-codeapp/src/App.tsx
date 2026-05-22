@@ -12,6 +12,7 @@ import {
   createDraftInvoices as createDraftInvoicesService,
   getInvoiceTracker,
   updateInvoiceStatus,
+  uploadInvoiceMock,
 } from "./services/invoiceTrackerService";
 import {
   baseAmount,
@@ -316,13 +317,6 @@ function getYearTerm(record: AgentPayReadyRecord) {
 
 function isMappedAgent(mapping: AgentMappingRow) {
   return Boolean(mapping.selectedNavId && mapping.selectedVendorName);
-}
-
-function nextDraftStatus(status: DraftStatus) {
-  const statuses: DraftStatus[] = ["New", "Sent", "Uploaded", "Completed"];
-  const currentIndex = statuses.indexOf(status);
-
-  return statuses[Math.min(currentIndex + 1, statuses.length - 1)];
 }
 
 function createInitialTrackerRecords() {
@@ -1015,56 +1009,132 @@ function InvoiceReviewScreen({
 }
 
 function InvoiceTrackerScreen({
-  trackerRecords,
-  successMessage,
   onAdvanceStatus,
+  onUploadInvoice,
+  successMessage,
+  trackerRecords,
 }: {
-  trackerRecords: DraftInvoiceRecord[];
-  successMessage: string;
   onAdvanceStatus: (draftName: string) => void;
+  onUploadInvoice: (draftName: string) => void;
+  successMessage: string;
+  trackerRecords: DraftInvoiceRecord[];
 }) {
+  const [draftNumberFilter, setDraftNumberFilter] = useState("");
+  const [agentNameFilter, setAgentNameFilter] = useState("");
+  const [yearTermFilter, setYearTermFilter] = useState("All");
+  const [statusFilter, setStatusFilter] = useState("All");
+  const yearTermOptions = uniqueOptions<DraftInvoiceRecord>(
+    trackerRecords,
+    (record) => record.YearTerm,
+  );
+  const filteredTrackerRecords = trackerRecords.filter((draft) => {
+    const matchesDraft =
+      !draftNumberFilter ||
+      draft.DraftNm.toLowerCase().includes(draftNumberFilter.trim().toLowerCase());
+    const matchesAgent =
+      !agentNameFilter ||
+      draft.AgentName.toLowerCase().includes(agentNameFilter.trim().toLowerCase());
+    const matchesYearTerm = yearTermFilter === "All" || draft.YearTerm === yearTermFilter;
+    const matchesStatus = statusFilter === "All" || draft.CurrentStatus === statusFilter;
+
+    return matchesDraft && matchesAgent && matchesYearTerm && matchesStatus;
+  });
+
   return (
     <div className="screen-stack">
       <SectionHeader title="Invoice Tracker" eyebrow="Progress" action="Export list" />
       {successMessage ? <div className="success-message">{successMessage}</div> : null}
-      <div className="table-shell">
+      <div className="tracker-filters">
+        <label>
+          Draft Number
+          <input
+            value={draftNumberFilter}
+            onChange={(event) => setDraftNumberFilter(event.target.value)}
+            placeholder="Filter draft"
+          />
+        </label>
+        <label>
+          Agent Name
+          <input
+            value={agentNameFilter}
+            onChange={(event) => setAgentNameFilter(event.target.value)}
+            placeholder="Filter agent"
+          />
+        </label>
+        <label>
+          YearTerm
+          <select value={yearTermFilter} onChange={(event) => setYearTermFilter(event.target.value)}>
+            <option>All</option>
+            {yearTermOptions.map((yearTerm) => (
+              <option key={yearTerm}>{yearTerm}</option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Status
+          <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
+            <option>All</option>
+            <option>New</option>
+            <option>Sent</option>
+            <option>Uploaded</option>
+            <option>Completed</option>
+          </select>
+        </label>
+      </div>
+      <div className="table-shell tracker-table-shell">
         <table>
           <thead>
             <tr>
-              <th>Draft</th>
-              <th>Agent Name</th>
-              <th>Agent Code</th>
-              <th>YearTerm</th>
+              <th>DraftNm</th>
+              <th>AgentName</th>
+              <th>NAVID</th>
+              <th>Program</th>
               <th>Campus</th>
-              <th>Total Commission</th>
+              <th>YearTerm</th>
+              <th>TotalPayment</th>
+              <th>CommissionAmount</th>
+              <th>CurrentStatus</th>
               <th>Created Date</th>
-              <th>Draft Link</th>
-              <th>Status</th>
-              <th>Next</th>
+              <th>Action</th>
             </tr>
           </thead>
           <tbody>
-            {trackerRecords.map((draft) => (
+            {filteredTrackerRecords.map((draft) => (
               <tr key={draft.DraftNm}>
                 <td>{draft.DraftNm}</td>
                 <td>{draft.AgentName}</td>
-                <td>{draft.AgentCode}</td>
-                <td>{draft.YearTerm}</td>
+                <td>{draft.NAVID || draft.AgentCode}</td>
+                <td title={draft.Program}>{draft.Program}</td>
                 <td>{draft.Campus}</td>
-                <td>{formatCurrency(draft.TotalCommission)}</td>
-                <td>{draft.CreatedDate}</td>
-                <td>{draft.DraftInvoiceLink}</td>
+                <td>{draft.YearTerm}</td>
+                <td>{formatCurrency(draft.TotalPayment)}</td>
+                <td>{formatCurrency(draft.CommissionAmount || draft.TotalCommission)}</td>
                 <td>
                   <StatusBadge>{draft.CurrentStatus}</StatusBadge>
                 </td>
+                <td>{draft.CreatedDate}</td>
                 <td>
-                  <button
-                    className="secondary-button table-action"
-                    disabled={draft.CurrentStatus === "Completed"}
-                    onClick={() => onAdvanceStatus(draft.DraftNm)}
-                  >
-                    Advance
-                  </button>
+                  {draft.CurrentStatus === "New" ? (
+                    <button
+                      className="secondary-button table-action"
+                      onClick={() => onAdvanceStatus(draft.DraftNm)}
+                    >
+                      Mark as Sent
+                    </button>
+                  ) : null}
+                  {draft.CurrentStatus === "Sent" ? (
+                    <button
+                      className="secondary-button table-action"
+                      onClick={() => onUploadInvoice(draft.DraftNm)}
+                    >
+                      Upload Invoice
+                    </button>
+                  ) : null}
+                  {draft.CurrentStatus === "Uploaded" ? (
+                    <button className="secondary-button table-action" disabled>
+                      Send to BC
+                    </button>
+                  ) : null}
                 </td>
               </tr>
             ))}
@@ -1075,7 +1145,13 @@ function InvoiceTrackerScreen({
   );
 }
 
-function UploadInvoiceScreen() {
+function UploadInvoiceScreen({
+  onUploadMock,
+  selectedDraftNm,
+}: {
+  onUploadMock: (draftName: string) => void;
+  selectedDraftNm: string;
+}) {
   return (
     <div className="screen-stack">
       <SectionHeader title="Upload Invoice" eyebrow="Invoice intake" action="Upload mock invoice" />
@@ -1093,6 +1169,10 @@ function UploadInvoiceScreen() {
           <h3>Extracted details</h3>
           <dl>
             <div>
+              <dt>Draft</dt>
+              <dd>{selectedDraftNm || "Select from Invoice Tracker"}</dd>
+            </div>
+            <div>
               <dt>Agent</dt>
               <dd>Sydney Education Partners</dd>
             </div>
@@ -1107,6 +1187,13 @@ function UploadInvoiceScreen() {
               </dd>
             </div>
           </dl>
+          <button
+            className="secondary-button side-panel-button"
+            disabled={!selectedDraftNm}
+            onClick={() => onUploadMock(selectedDraftNm)}
+          >
+            Mark as Uploaded
+          </button>
         </aside>
       </div>
     </div>
@@ -1191,8 +1278,11 @@ function ActiveScreen({
   onExtractData,
   onGenerateDrafts,
   onRefreshLookups,
+  onUploadMock,
+  onUploadInvoice,
   onUpdateVendor,
   setActiveScreen,
+  selectedUploadDraftNm,
   successMessage,
   trackerRecords,
   vendors,
@@ -1210,12 +1300,15 @@ function ActiveScreen({
   onExtractData: (records: AgentPayReadyRecord[], filters: GenerateDraftFilters) => Promise<void>;
   onGenerateDrafts: (drafts: InvoiceReviewSummary[]) => void;
   onRefreshLookups: () => void;
+  onUploadMock: (draftName: string) => void;
+  onUploadInvoice: (draftName: string) => void;
   onUpdateVendor: (
     agentCompanyId: string,
     selectedNavId: string,
     selectedVendorName: string,
   ) => void;
   setActiveScreen: (screen: string) => void;
+  selectedUploadDraftNm: string;
   successMessage: string;
   trackerRecords: DraftInvoiceRecord[];
   vendors: VendorRecord[];
@@ -1263,12 +1356,20 @@ function ActiveScreen({
     return (
       <InvoiceTrackerScreen
         onAdvanceStatus={onAdvanceStatus}
+        onUploadInvoice={onUploadInvoice}
         successMessage={successMessage}
         trackerRecords={trackerRecords}
       />
     );
   }
-  if (activeScreen === "Upload Invoice") return <UploadInvoiceScreen />;
+  if (activeScreen === "Upload Invoice") {
+    return (
+      <UploadInvoiceScreen
+        onUploadMock={onUploadMock}
+        selectedDraftNm={selectedUploadDraftNm}
+      />
+    );
+  }
   return <SendToBcScreen />;
 }
 
@@ -1283,6 +1384,7 @@ function App() {
   );
   const [isLookupLoading, setIsLookupLoading] = useState(() => !getCachedAgentLookups());
   const [lookupError, setLookupError] = useState("");
+  const [selectedUploadDraftNm, setSelectedUploadDraftNm] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
   const extractedRecordsRef = useRef<AgentPayReadyRecord[]>([]);
   const hasExtracted = extractedRecords.length > 0;
@@ -1425,12 +1527,25 @@ function App() {
   const advanceStatus = (draftName: string) => {
     const currentRecord = trackerRecords.find((record) => record.DraftNm === draftName);
 
-    if (!currentRecord) {
+    if (!currentRecord || currentRecord.CurrentStatus !== "New") {
       return;
     }
 
-    updateInvoiceStatus(draftName, nextDraftStatus(currentRecord.CurrentStatus));
+    updateInvoiceStatus(draftName, "Sent");
     setTrackerRecords(getInvoiceTracker() as DraftInvoiceRecord[]);
+  };
+
+  const uploadInvoice = (draftName: string) => {
+    setSelectedUploadDraftNm(draftName);
+    setSuccessMessage("");
+    setActiveScreen("Upload Invoice");
+  };
+
+  const uploadSelectedInvoiceMock = (draftName: string) => {
+    uploadInvoiceMock(draftName, "mock-invoice.pdf");
+    setTrackerRecords(getInvoiceTracker() as DraftInvoiceRecord[]);
+    setSuccessMessage(`${draftName} marked as uploaded.`);
+    setActiveScreen("Invoice Tracker");
   };
 
   return (
@@ -1501,7 +1616,10 @@ function App() {
             onExtractData={extractData}
             onGenerateDrafts={generateDraftInvoices}
             onRefreshLookups={() => void refreshLookups()}
+            onUploadMock={uploadSelectedInvoiceMock}
+            onUploadInvoice={uploadInvoice}
             onUpdateVendor={updateVendor}
+            selectedUploadDraftNm={selectedUploadDraftNm}
             setActiveScreen={navigateToScreen}
             successMessage={successMessage}
             trackerRecords={trackerRecords}
